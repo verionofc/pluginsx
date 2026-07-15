@@ -1,0 +1,35 @@
+{
+  "name": "api",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch --env-file=.env.development.local src/server.ts",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "start": "NODE_ENV=production node --env-file=.env.local dist/server.js"
+  },
+  "author": {
+    "name": "Israel R. Jatobá",
+    "enterprise": "Verion Studio, Inc.",
+    "url": "https://github.com/yeyTaken"
+  },
+  "dependencies": {
+    "@elysia/node": "^1.4.6",
+    "@elysiajs/cors": "^1.4.1",
+    "@elysiajs/node": "^1.4.5",
+    "@elysiajs/openapi": "^1.4.13",
+    "argon2": "^0.44.0",
+    "axios": "^1.18.1",
+    "better-auth": "^1.4.12",
+    "chalk": "^5.6.2",
+    "elysia": "latest",
+    "mongoose": "^8",
+    "pino": "^10.1.1",
+    "uuid": "^14.0.1",
+    "zod": "^4.3.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24",
+    "typescript": "^5"
+  }
+}
