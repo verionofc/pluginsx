@@ -22,6 +22,15 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Verify private submodule token is configured
+        env:
+          PLUGINS_CORE_READ_TOKEN: ${{ secrets.PLUGINS_CORE_READ_TOKEN }}
+        run: |
+          if [ -z "$PLUGINS_CORE_READ_TOKEN" ]; then
+            echo "Missing PLUGINS_CORE_READ_TOKEN. Add a fine-grained token with Contents: Read-only access to verionofc/plugins-core in this repository's Actions secrets."
+            exit 1
+          fi
+
       - name: Checkout repository and plugin source
         uses: actions/checkout@v4
         with:
