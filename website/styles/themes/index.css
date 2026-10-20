@@ -1,0 +1,18 @@
+@import "./light.css";
+@import "./dark.css";
+
+@theme inline {
+  /* Base */
+  --color-background: var(--background);
+  --color-background-hover: var(--background-hover);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+
+  /* Estados */
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+
+  /* UI */
+  --color-border: var(--border);
+}

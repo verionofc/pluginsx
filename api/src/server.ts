@@ -16,6 +16,7 @@ import { aboutRoutes } from "./http/routes/about.js";
 import { logger } from "./utils/logger.js";
 import { connectDatabase } from "./database/connect.js";
 import { licenseRoutes } from "./http/routes/license.js";
+import { pluginRoutes } from "./http/routes/plugins.js";
 
 await connectDatabase();
 
@@ -37,7 +38,8 @@ const app = new Elysia({ name: "PluginsX API", adapter: node() })
         info: {
           title: "PluginsX API",
           version: Package.version,
-          description: "Principal API for PluginsX.",
+          description:
+            "API do PluginsX voltada exclusivamente a servidores PaperMC. Downloads e metadados de plugins são publicados para Paper.",
         },
         // components: (await OpenAPI.components) as any,
         // paths: (await OpenAPI.getPaths()) as any,
@@ -58,6 +60,11 @@ const app = new Elysia({ name: "PluginsX API", adapter: node() })
             name: "License",
             description: "License related routes",
           },
+          {
+            name: "Plugins",
+            description:
+              "Metadados e downloads de versões compatíveis com PaperMC.",
+          },
         ],
       },
     }),
@@ -69,6 +76,7 @@ const app = new Elysia({ name: "PluginsX API", adapter: node() })
   // .use(userRoutes)
   .use(aboutRoutes)
   .use(licenseRoutes)
+  .use(pluginRoutes)
 
   .listen(
     {

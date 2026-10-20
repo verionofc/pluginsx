@@ -1,0 +1,12 @@
+{
+    "schemaVersion": 1,
+    "plugins": [
+        {
+            "name": "SpawnerX",
+            "slug": "spawnerx",
+            "platform": "PaperMC",
+            "latestVersion": "1.0.0-beta.1",
+            "releaseIndex": "SpawnerX/releases.json"
+        }
+    ]
+}

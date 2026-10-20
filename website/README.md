@@ -1,0 +1,23 @@
+# PluginsX Website
+
+Site do projeto PluginsX feito com Next.js App Router, React e Tailwind CSS.
+
+## Desenvolvimento
+
+Instale as dependências com Bun e inicie o servidor local:
+
+```bash
+bun install
+bun run dev
+```
+
+Abra [http://localhost:3000](http://localhost:3000). Os principais arquivos da aplicação ficam em `app/`, os componentes reutilizáveis em `components/` e `widgets/`, e os estilos globais em `styles/`.
+
+Configure `NEXT_PUBLIC_API_URL` com a URL pública da API PluginsX. O site carrega o catálogo de plugins em `/plugins` e as versões pelo índice individual de cada plugin, com cache de uma hora. A rota `/plugins/{slug}` usa conteúdo detalhado do SpawnerX e uma página genérica de downloads para outros plugins PaperMC publicados no catálogo.
+
+## Verificações e build
+
+```bash
+bun run lint
+bun run build
+```
