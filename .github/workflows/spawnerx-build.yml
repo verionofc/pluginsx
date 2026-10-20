@@ -16,12 +16,18 @@ on:
 
 jobs:
   build:
+    # Fork PRs do not receive repository secrets, so they cannot fetch the private submodule.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout repository and plugin source
         uses: actions/checkout@v4
         with:
           submodules: recursive
+          token: ${{ secrets.PLUGINS_CORE_READ_TOKEN }}
+          persist-credentials: false
 
       - name: Set up Java
         uses: actions/setup-java@v4
