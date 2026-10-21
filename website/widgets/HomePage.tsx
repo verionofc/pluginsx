@@ -5,6 +5,7 @@ import { motion, useMotionValue, useReducedMotion, useSpring, useTransform } fro
 
 import { LicenseGenerator } from "@/widgets/LicenseGenerator";
 import { PluginInstaller } from "@/widgets/PluginInstaller";
+import { AmbientMusic } from "@/widgets/AmbientMusic";
 
 export function HomePage() {
   const prefersReducedMotion = useReducedMotion();
@@ -40,6 +41,7 @@ export function HomePage() {
 
   return (
     <div className="relative isolate min-h-screen bg-black">
+      <AmbientMusic />
       <div
         aria-hidden="true"
         className="pointer-events-none fixed inset-0 -z-10 overflow-hidden [perspective:1200px]"

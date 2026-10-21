@@ -14,7 +14,17 @@ export function MiniFooter() {
 
         <div className="hidden items-center gap-2 text-[11px] text-white/45 sm:flex">
           <span className="size-1.5 bg-[#769a50]" />
-          <span>PaperMC</span>
+          <span>
+            powered by{" "}
+            <Link
+              href={settings.links.github}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline hover:no-underline"
+            >
+              {settings.name}
+            </Link>
+          </span>
           <span className="text-white/20">·</span>
           <span>v{settings.version}</span>
         </div>
@@ -28,7 +38,11 @@ export function MiniFooter() {
         >
           <TbBrandGithub size={16} aria-hidden="true" />
           <span>GitHub</span>
-          <TbArrowUpRight size={13} aria-hidden="true" className="text-white/45" />
+          <TbArrowUpRight
+            size={13}
+            aria-hidden="true"
+            className="text-white/45"
+          />
         </a>
       </div>
     </footer>

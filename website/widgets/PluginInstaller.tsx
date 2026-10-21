@@ -273,7 +273,7 @@ export function PluginInstaller() {
             </a>
 
             <p className="mt-3 text-center text-[11px] leading-5 text-[#91a08b]">
-              Compatível com PaperMC. Coloque o arquivo na pasta <code className="text-[#c8d5bf]">plugins</code> do servidor e reinicie.
+              Compatível apenas com PaperMC. Coloque o arquivo na pasta <code className="text-[#c8d5bf]">plugins</code> do servidor e reinicie.
             </p>
           </div>
         </div>
