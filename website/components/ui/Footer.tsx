@@ -9,7 +9,6 @@ import { TbHome } from "react-icons/tb";
 
 import { settings } from "@/lib";
 import { Icon } from "@/widgets/Icon";
-import { Theme } from "@/widgets/switcher/theme";
 
 type FooterItem = {
   icon: IconType;
@@ -38,10 +37,6 @@ export function Footer() {
             <p className="pt-2 text-xs text-foreground/60">
               Plugins e ferramentas do projeto.
             </p>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Theme />
           </div>
         </div>
 

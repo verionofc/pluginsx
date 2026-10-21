@@ -1,5 +1,17 @@
-@import "./light.css";
-@import "./dark.css";
+:root {
+  --background: #000000;
+  --background-hover: #191919;
+  --foreground: #ffffff;
+  --primary: #347c00;
+
+  /* Estados */
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --danger: #ff4d6d;
+
+  /* UI */
+  --border: #1a1a1f;
+}
 
 @theme inline {
   /* Base */

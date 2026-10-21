@@ -26,6 +26,13 @@ export default function RootLayout({
   return (
     <html lang="pt-BR" className="h-full antialiased" suppressHydrationWarning>
       <body className="antialiased relative isolate flex min-h-screen w-full flex-col overflow-x-hidden bg-black">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none fixed inset-0 z-0 bg-cover bg-center"
+          style={{ backgroundImage: "url('/images/minecraft-10th-5120x2880-23769.jpg')" }}
+        />
+        <div aria-hidden="true" className="pointer-events-none fixed inset-0 z-0 bg-black/60 backdrop-blur-[3px]" />
+        <div aria-hidden="true" className="pointer-events-none fixed inset-0 z-0 bg-[radial-gradient(ellipse_at_50%_35%,rgba(13,25,15,0.18),rgba(0,0,0,0.56)_82%)]" />
         <DefaultProviders>
           {children}
           <MiniFooter />

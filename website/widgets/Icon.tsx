@@ -40,7 +40,7 @@ export function Icon({ variant = "id", animation, isOpen = false }: IconProps) {
   const href = variant === "profile" ? "/profile" : "/";
   const effectiveAnimation = isOpen ? undefined : animation;
 
-  const imageSrc = "/pluginsx.png";
+  const imageSrc = "/images/pluginsx.png";
 
   function renderText() {
     if (isOpen) {

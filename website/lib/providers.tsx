@@ -1,10 +1,9 @@
 "use client";
 
-import { ThemeProvider } from "next-themes";
 import { ViewTransition } from "react";
 
 // import { Header } from "@/components/ui/Header";
-import { Footer } from "@/components/ui/Footer";
+// import { Footer } from "@/components/ui/Footer";
 
 function Providers({
   children,
@@ -12,12 +11,7 @@ function Providers({
   children: React.ReactNode;
 }>) {
   return (
-    <ThemeProvider
-      attribute="class"
-      defaultTheme="system"
-      enableSystem
-      disableTransitionOnChange
-    >
+
       <ViewTransition>
         <div className="relative z-10 flex min-h-screen flex-col">
           {/* <Header /> */}
@@ -26,7 +20,6 @@ function Providers({
           {/* <Footer /> */}
         </div>
       </ViewTransition>
-    </ThemeProvider>
   );
 }
 
