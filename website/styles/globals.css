@@ -3,6 +3,19 @@
 
 @import "./themes/index.css";
 
+@font-face {
+  font-family: "Minecraft Text";
+  src: url("https://cdn.jsdelivr.net/gh/aaronpinero/minecraft-fonts@main/dist/minecraft-text/minecraft-text.woff2")
+    format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+.font-minecraft-text {
+  font-family: "Minecraft Text", sans-serif;
+}
+
 html,
 body {
   min-height: 100vh;

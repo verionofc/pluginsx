@@ -23,7 +23,7 @@ function Providers({
           {/* <Header /> */}
           {/* <main className="flex-1 pt-17.5">{children}</main> */}
           <main className="flex-1">{children}</main>
-          <Footer />
+          {/* <Footer /> */}
         </div>
       </ViewTransition>
     </ThemeProvider>
