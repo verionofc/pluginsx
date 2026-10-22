@@ -1,5 +1,10 @@
 import type { NextConfig } from "next";
 
+const apiUrl = (
+  process.env.NEXT_PUBLIC_API_URL ??
+  (process.env.NODE_ENV === "development" ? "http://localhost:3333" : "")
+).replace(/\/+$/, "");
+
 const nextConfig: NextConfig = {
   /* config options here */
   experimental: {
@@ -8,6 +13,15 @@ const nextConfig: NextConfig = {
   cacheComponents: true,
   partialPrefetching: true,
   reactCompiler: true,
+  async rewrites() {
+    if (!apiUrl) return [];
+
+    return [
+      { source: "/auth/:path*", destination: `${apiUrl}/auth/:path*` },
+      { source: "/license/:path*", destination: `${apiUrl}/license/:path*` },
+      { source: "/me/:path*", destination: `${apiUrl}/me/:path*` },
+    ];
+  },
   turbopack: {
     rules: {
       "*.css": {

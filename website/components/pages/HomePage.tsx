@@ -337,7 +337,7 @@ export function LicenseGenerator() {
 
     const controller = new AbortController();
     setIsPremiumStatusLoading(true);
-    void fetch(`${apiUrl}/license/premium`, {
+    void fetch("/license/premium", {
       credentials: "include",
       signal: controller.signal,
     }).then(async (response) => {
@@ -364,7 +364,7 @@ export function LicenseGenerator() {
         throw new Error("A URL da API não está configurada.");
       }
 
-      const response = await fetch(`${apiUrl}/license/generate`, {
+      const response = await fetch("/license/generate", {
         method: "POST",
       });
 
@@ -418,7 +418,7 @@ export function LicenseGenerator() {
 
     setIsPremiumLoading(true);
     try {
-      const response = await fetch(`${apiUrl}/license/premium/generate`, {
+      const response = await fetch("/license/premium/generate", {
         method: "POST",
         credentials: "include",
       });

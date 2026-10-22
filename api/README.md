@@ -37,13 +37,15 @@ o JAR como anexo e informa a versão selecionada nos cabeçalhos
 
 A autenticação aceita somente OAuth por GitHub; login/cadastro por e-mail e
 senha fica desativado. Configure `GITHUB_CLIENT_ID` e `GITHUB_CLIENT_SECRET`
-junto com `BETTER_AUTH_SECRET` (mínimo de 32 caracteres) e `BETTER_AUTH_URL`
-(origem pública da API). `URL` e `DEV_URL` são as origens web aceitas.
+junto com `BETTER_AUTH_SECRET` (mínimo de 32 caracteres). O Better Auth usa
+`URL` como origem pública em produção e `DEV_URL` em desenvolvimento. O site
+encaminha `/auth/*` para esta API, mantendo os cookies de autenticação na
+origem do site. `URL` e `DEV_URL` também são as origens web aceitas.
 
 Cadastre estes callbacks nas aplicações OAuth dos provedores:
 
 ```text
-${BETTER_AUTH_URL}/auth/callback/github
+${URL}/auth/callback/github
 ```
 
 O início do fluxo é feito pelo endpoint social do Better Auth, com o cookie de

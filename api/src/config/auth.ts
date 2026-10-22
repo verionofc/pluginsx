@@ -9,12 +9,14 @@ import mongoose from "mongoose";
 const trustedOrigins = [env.URL, env.DEV_URL].map(
   (url) => new URL(url).origin,
 );
+const authBaseURL =
+  process.env.NODE_ENV === "production" ? env.URL : env.DEV_URL;
 
 // This module is loaded after connectDatabase() in server.ts so the shared
 // MongoDB connection is ready before Better Auth creates its adapter.
 const authOptions = {
   appName: "PluginsX",
-  baseURL: env.BETTER_AUTH_URL,
+  baseURL: authBaseURL,
   basePath: "/auth",
   secret: env.BETTER_AUTH_SECRET,
   trustedOrigins,
