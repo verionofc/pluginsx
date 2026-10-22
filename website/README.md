@@ -15,6 +15,8 @@ Abra [http://localhost:3000](http://localhost:3000). Os principais arquivos da a
 
 Configure `NEXT_PUBLIC_API_URL` com a URL pública da API PluginsX. O site carrega o catálogo de plugins em `/plugins` e as versões pelo índice individual de cada plugin, com cache de uma hora. A rota `/plugins/{slug}` usa conteúdo detalhado do SpawnerX e uma página genérica de downloads para outros plugins PaperMC publicados no catálogo.
 
+A página `/account` permite entrar com GitHub, consultar a sessão e sair da conta. Na página inicial, a key Premium/Plus é gerada para a conta autenticada e pode ser recuperada depois sem criar uma segunda key. O login usa os cookies da API; configure `NEXT_PUBLIC_API_URL` e permita a origem do site em `URL` ou `DEV_URL` na API.
+
 ## Verificações e build
 
 ```bash

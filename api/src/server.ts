@@ -7,18 +7,30 @@ import z from "zod";
 import { env } from "./env.js";
 import { Package } from "./config/package.js";
 
-// import { betterAuthPlugin, OpenAPI } from "#/http/plugins/better-auth";
-
 import { indexRoutes } from "./http/routes/index.js";
-// import { userRoutes } from "./http/routes/user.js";
 import { aboutRoutes } from "./http/routes/about.js";
 
 import { logger } from "./utils/logger.js";
 import { connectDatabase } from "./database/connect.js";
-import { licenseRoutes } from "./http/routes/license.js";
 import { pluginRoutes } from "./http/routes/plugins.js";
 
 await connectDatabase();
+
+// Better Auth uses the already-open Mongoose MongoDB connection.
+const [
+  { betterAuthPlugin },
+  { userRoutes },
+  { licenseRoutes },
+  { License },
+] = await Promise.all([
+  import("./http/plugins/better-auth.js"),
+  import("./http/routes/user.js"),
+  import("./http/routes/license.js"),
+  import("./database/models/License.js"),
+]);
+
+// Create the unique owner index before accepting premium key requests.
+await License.init();
 
 const app = new Elysia({ name: "PluginsX API", adapter: node() })
   .use(
@@ -41,21 +53,15 @@ const app = new Elysia({ name: "PluginsX API", adapter: node() })
           description:
             "API do PluginsX voltada exclusivamente a servidores PaperMC. Downloads e metadados de plugins são publicados para Paper.",
         },
-        // components: (await OpenAPI.components) as any,
-        // paths: (await OpenAPI.getPaths()) as any,
         tags: [
           {
             name: "Default",
             description: "Default routes",
           },
-          // {
-          //   name: "User",
-          //   description: "User related routes",
-          // },
-          // {
-          //   name: "Auth system",
-          //   description: "System authentication for users in routes",
-          // },
+          {
+            name: "User",
+            description: "Authenticated user profile",
+          },
           {
             name: "License",
             description: "License related routes",
@@ -69,11 +75,11 @@ const app = new Elysia({ name: "PluginsX API", adapter: node() })
       },
     }),
   )
-  // .use(betterAuthPlugin)
+  .use(betterAuthPlugin)
 
   // Routes
   .use(indexRoutes)
-  // .use(userRoutes)
+  .use(userRoutes)
   .use(aboutRoutes)
   .use(licenseRoutes)
   .use(pluginRoutes)

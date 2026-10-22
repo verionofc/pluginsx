@@ -1,9 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@heroui/react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { TbArrowDown, TbBlocks, TbCheck, TbChevronDown, TbChevronUp, TbCopy, TbDownload, TbLoader2, TbPick, TbPlayerPause, TbPlayerPlay, TbVinyl } from "react-icons/tb";
+import { TbArrowDown, TbBlocks, TbCheck, TbChevronDown, TbChevronUp, TbCopy, TbDownload, TbEye, TbEyeOff, TbLoader2, TbPick, TbPlayerPause, TbPlayerPlay, TbSparkles, TbVinyl } from "react-icons/tb";
+
+import { authClient } from "@/lib/auth-client";
 
 type Plugin = {
   name: string;
@@ -23,6 +26,13 @@ type Release = {
 type LicenseResponse = {
   code: string;
   created?: true;
+};
+
+type PremiumLicenseResponse = {
+  code: string | null;
+  tier: "plus";
+  valid: boolean;
+  created?: boolean;
 };
 
 const apiUrl = (
@@ -304,10 +314,46 @@ export function PluginInstaller() {
 
 
 export function LicenseGenerator() {
+  const router = useRouter();
   const [license, setLicense] = useState<string>();
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [premiumLicense, setPremiumLicense] = useState<string>();
+  const [isPremiumLicenseVisible, setIsPremiumLicenseVisible] = useState(false);
+  const [premiumMessage, setPremiumMessage] = useState("");
+  const [isPremiumLoading, setIsPremiumLoading] = useState(false);
+  const [isPremiumStatusLoading, setIsPremiumStatusLoading] = useState(false);
+  const { data: session, isPending: isSessionPending } = authClient.useSession();
   const prefersReducedMotion = useReducedMotion();
+
+  useEffect(() => {
+    setPremiumLicense(undefined);
+    if (isSessionPending) return;
+    if (!session) {
+      setIsPremiumStatusLoading(false);
+      return;
+    }
+    if (!apiUrl) return;
+
+    const controller = new AbortController();
+    setIsPremiumStatusLoading(true);
+    void fetch(`${apiUrl}/license/premium`, {
+      credentials: "include",
+      signal: controller.signal,
+    }).then(async (response) => {
+      if (response.status === 401) return;
+      if (!response.ok) throw new Error("Não foi possível consultar sua key Premium.");
+      const result = (await response.json()) as PremiumLicenseResponse;
+      if (result.tier === "plus" && result.code && result.valid) setPremiumLicense(result.code);
+    }).catch((error: unknown) => {
+      if (error instanceof Error && error.name !== "AbortError") {
+        setPremiumMessage("Não foi possível consultar sua key Premium agora.");
+      }
+    }).finally(() => {
+      if (!controller.signal.aborted) setIsPremiumStatusLoading(false);
+    });
+    return () => controller.abort();
+  }, [isSessionPending, session]);
 
   async function generateLicense() {
     setIsLoading(true);
@@ -354,6 +400,69 @@ export function LicenseGenerator() {
       setMessage("Key copiada.");
     } catch {
       setMessage("Não foi possível copiar. Selecione e copie a key acima.");
+    }
+  }
+
+  async function generatePremiumLicense() {
+    setPremiumMessage("");
+
+    if (!session) {
+      router.push("/account?notice=premium-key");
+      return;
+    }
+
+    if (!apiUrl) {
+      setPremiumMessage("A URL da API não está configurada.");
+      return;
+    }
+
+    setIsPremiumLoading(true);
+    try {
+      const response = await fetch(`${apiUrl}/license/premium/generate`, {
+        method: "POST",
+        credentials: "include",
+      });
+
+      if (response.status === 401) {
+        router.push("/account?notice=premium-key");
+        return;
+      }
+
+      const result = (await response.json()) as PremiumLicenseResponse & {
+        message?: string;
+      };
+      if (!response.ok) {
+        throw new Error(result.message ?? "Não foi possível gerar sua key Premium.");
+      }
+      if (result.tier !== "plus" || !result.code || !result.valid) {
+        throw new Error("A API retornou uma key Premium inválida.");
+      }
+
+      setPremiumLicense(result.code);
+      setPremiumMessage(
+        result.created
+          ? "Portal aberto. Sua key Premium foi vinculada à conta."
+          : "Sua key Premium existente foi recuperada.",
+      );
+    } catch (error) {
+      setPremiumMessage(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível gerar sua key Premium.",
+      );
+    } finally {
+      setIsPremiumLoading(false);
+    }
+  }
+
+  async function copyPremiumLicense() {
+    if (!premiumLicense) return;
+
+    try {
+      await navigator.clipboard.writeText(premiumLicense);
+      setPremiumMessage("Key Premium copiada para o inventário.");
+    } catch {
+      setPremiumMessage("Não foi possível copiar. Selecione e copie a key acima.");
     }
   }
 
@@ -423,18 +532,79 @@ export function LicenseGenerator() {
               ))}
             </div>
 
-            <motion.div whileHover={prefersReducedMotion ? undefined : { y: -2 }} whileTap={{ scale: 0.98 }} className="mt-6">
-              <Button
-                size="lg"
-                variant="primary"
-                onPress={generateLicense}
-                isDisabled={isLoading}
-                className="font-minecraft-text h-12 w-full rounded-lg border-b-4 border-[#345d2f] bg-[#5e9b43] font-bold text-[#f7ffe9] shadow-[0_5px_20px_rgba(71,134,55,0.2)] hover:bg-[#6eaa4d]"
+            <div className="mt-6 grid gap-3 sm:grid-cols-2">
+              <motion.div
+                whileHover={prefersReducedMotion ? undefined : { y: -2 }}
+                whileTap={{ scale: 0.98 }}
               >
-                <TbPick size={19} aria-hidden="true" />
-                {isLoading ? "Verificando inventário..." : "Gerar minha key"}
-              </Button>
-            </motion.div>
+                <Button
+                  size="lg"
+                  variant="primary"
+                  onPress={generateLicense}
+                  isDisabled={isLoading}
+                  className="font-minecraft-text h-12 w-full rounded-lg border-b-4 border-[#345d2f] bg-[#5e9b43] font-bold text-[#f7ffe9] shadow-[0_5px_20px_rgba(71,134,55,0.2)] hover:bg-[#6eaa4d]"
+                >
+                  <TbPick size={19} aria-hidden="true" />
+                  {isLoading ? "Verificando inventário..." : "Gerar minha key"}
+                </Button>
+              </motion.div>
+
+              <motion.div
+                whileHover={prefersReducedMotion ? undefined : { y: -2 }}
+                whileTap={{ scale: 0.98 }}
+                className="group relative isolate"
+              >
+                <Button
+                  size="lg"
+                  variant="primary"
+                  onPress={generatePremiumLicense}
+                  isDisabled={isPremiumLoading || isPremiumStatusLoading || isSessionPending}
+                  className="font-minecraft-text relative h-12 w-full overflow-hidden rounded-lg border-b-4 border-[#581c87] bg-[#6d28d9] font-bold text-white shadow-[0_5px_24px_rgba(147,51,234,0.38)] hover:bg-[#7c3aed]"
+                >
+                  <motion.span
+                    aria-hidden="true"
+                    animate={prefersReducedMotion ? undefined : { opacity: [0.35, 0.7, 0.35] }}
+                    transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
+                    className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_120%,rgba(236,72,153,0.8),transparent_65%),linear-gradient(110deg,rgba(126,34,206,0.4),rgba(30,10,55,0.3),rgba(168,85,247,0.5))]"
+                  />
+                  <span
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-x-[27%] -top-8 h-16 rounded-full border border-fuchsia-200/55 shadow-[0_0_24px_rgba(217,70,239,0.85),inset_0_0_20px_rgba(168,85,247,0.55)]"
+                  />
+                  {[0, 1, 2, 3, 4, 5, 6].map((particle) => (
+                    <motion.span
+                      key={particle}
+                      aria-hidden="true"
+                      className={`pointer-events-none absolute z-10 ${particle % 3 === 0 ? "size-1.5 bg-fuchsia-100" : particle % 3 === 1 ? "size-1 bg-violet-200" : "size-1.5 bg-purple-300"} shadow-[2px_0_#c084fc,-2px_0_#7e22ce,0_2px_#9333ea]`}
+                      style={{ left: `${8 + particle * 13}%`, top: particle % 2 ? "24%" : "68%" }}
+                      animate={prefersReducedMotion ? undefined : {
+                        y: [0, -5, -10, -15 - (particle % 2) * 5],
+                        x: [0, particle % 2 ? 3 : -3, 0],
+                        opacity: [0, 1, 0],
+                      }}
+                      transition={{
+                        duration: 1.5 + particle * 0.12,
+                        delay: particle * 0.2,
+                        repeat: Infinity,
+                        ease: "easeOut",
+                      }}
+                    />
+                  ))}
+                  <TbSparkles className="relative z-20" size={19} aria-hidden="true" />
+                  <span className="relative z-20">
+                    {isPremiumLoading
+                      ? "Abrindo portal..."
+                      : isSessionPending
+                        ? "Verificando conta..."
+                        : isPremiumStatusLoading
+                          ? "Consultando key..."
+                        : premiumLicense
+                          ? "Ver minha key premium"
+                          : "Gerar key premium"}
+                  </span>
+                </Button>
+              </motion.div>
+            </div>
 
             {license && (
               <motion.div
@@ -457,6 +627,59 @@ export function LicenseGenerator() {
                 >
                   <TbCopy size={15} aria-hidden="true" />
                   Copiar para o inventário
+                </Button>
+              </motion.div>
+            )}
+
+            {premiumMessage && (
+              <div
+                className="mt-5 border-l-2 border-fuchsia-400 bg-fuchsia-950/20 py-2 pl-3 text-sm text-fuchsia-100/85"
+                role="status"
+              >
+                <p>{premiumMessage}</p>
+              </div>
+            )}
+
+            {premiumLicense && session && (
+              <motion.div
+                initial={prefersReducedMotion ? false : { opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="relative mt-4 overflow-hidden border border-fuchsia-400/25 bg-[#12091b] p-4 shadow-[0_0_32px_rgba(147,51,234,0.12)]"
+              >
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none absolute -right-8 -top-10 size-28 rounded-full border border-fuchsia-300/20 shadow-[0_0_35px_rgba(168,85,247,0.2)]"
+                />
+                <div className="relative mb-2 flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.2em] text-fuchsia-200/75">
+                  <span className="font-minecraft-text">Portal Nether · Premium</span>
+                  <span className="flex items-center gap-2 text-fuchsia-100">
+                    <span className="flex items-center gap-1">
+                      <TbCheck size={13} aria-hidden="true" />
+                      Vinculada
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsPremiumLicenseVisible((visible) => !visible)}
+                      aria-label={isPremiumLicenseVisible ? "Ocultar key Premium" : "Mostrar key Premium"}
+                      aria-pressed={isPremiumLicenseVisible}
+                      title={isPremiumLicenseVisible ? "Ocultar key" : "Mostrar key"}
+                      className="grid size-8 place-items-center rounded-md border border-fuchsia-200/15 text-fuchsia-100/75 transition-colors hover:bg-fuchsia-300/10 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fuchsia-200"
+                    >
+                      {isPremiumLicenseVisible ? <TbEyeOff size={16} aria-hidden="true" /> : <TbEye size={16} aria-hidden="true" />}
+                    </button>
+                  </span>
+                </div>
+                <code className="relative block break-all rounded bg-purple-950/55 px-3 py-3 text-left text-sm font-semibold text-fuchsia-100 ring-1 ring-fuchsia-300/10">
+                  {isPremiumLicenseVisible ? premiumLicense : "••••••••••••••••••••••••••••••••"}
+                </code>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onPress={copyPremiumLicense}
+                  className="relative mt-3 -ml-2 text-fuchsia-200 hover:bg-fuchsia-300/10"
+                >
+                  <TbCopy size={15} aria-hidden="true" />
+                  Copiar key premium
                 </Button>
               </motion.div>
             )}

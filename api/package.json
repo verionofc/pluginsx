@@ -14,6 +14,7 @@
     "url": "https://github.com/yeyTaken"
   },
   "dependencies": {
+    "@better-auth/mongo-adapter": "^1.6.23",
     "@elysia/node": "^1.4.6",
     "@elysiajs/cors": "^1.4.1",
     "@elysiajs/node": "^1.4.5",

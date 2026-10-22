@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 
 import "@/styles/globals.css";
-import { settings } from "@/lib";
+import { AccountNav } from "@/components/ui/AccountNav";
 import { MiniFooter } from "@/components/ui/MiniFooter";
+import { settings } from "@/lib";
 import { DefaultProviders } from "@/lib/providers";
 
 export const metadata: Metadata = {
@@ -29,14 +30,24 @@ export default function RootLayout({
         <div
           aria-hidden="true"
           className="pointer-events-none fixed inset-0 z-0 bg-cover bg-center"
-          style={{ backgroundImage: "url('/images/minecraft-10th-5120x2880-23769.jpg')" }}
+          style={{
+            backgroundImage:
+              "url('/images/minecraft-10th-5120x2880-23769.jpg')",
+          }}
         />
-        <div aria-hidden="true" className="pointer-events-none fixed inset-0 z-0 bg-black/60 backdrop-blur-[3px]" />
-        <div aria-hidden="true" className="pointer-events-none fixed inset-0 z-0 bg-[radial-gradient(ellipse_at_50%_35%,rgba(13,25,15,0.18),rgba(0,0,0,0.56)_82%)]" />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none fixed inset-0 z-0 bg-black/60 backdrop-blur-[3px]"
+        />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none fixed inset-0 z-0 bg-[radial-gradient(ellipse_at_50%_35%,rgba(13,25,15,0.18),rgba(0,0,0,0.56)_82%)]"
+        />
         <DefaultProviders>
           {children}
           <MiniFooter />
         </DefaultProviders>
+        <AccountNav />
       </body>
     </html>
   );

@@ -1,25 +1,17 @@
-// import type { User } from "better-auth/types";
-// import { Elysia } from "elysia";
-// import { z } from "zod";
+import { Elysia } from "elysia";
 
-// import { betterAuthPlugin } from "#/http/plugins/better-auth";
+import { authSessionPlugin } from "../plugins/better-auth.js";
 
-// export const userRoutes = new Elysia({ prefix: "/me" })
-//   .use(betterAuthPlugin)
-//   .get(
-//     "/",
-//     ({ user }) => {
-//       return user;
-//     },
-//     {
-//       auth: true,
-//       detail: {
-//         summary: "Get current user profile",
-//         tags: ["User"],
-//       },
-//       response: {
-//         201: z.object<User>(),
-//         401: z.object({ message: z.string() }),
-//       },
-//     },
-//   );
+export const userRoutes = new Elysia({ prefix: "/me" })
+  .use(authSessionPlugin)
+  .get(
+    "/",
+    ({ user }) => user,
+    {
+      auth: true,
+      detail: {
+        summary: "Get the authenticated user's profile",
+        tags: ["User"],
+      },
+    },
+  );

@@ -32,3 +32,49 @@ recusados. `downloadUrl` é relativo à origem da API. A rota de download retorn
 o JAR como anexo e informa a versão selecionada nos cabeçalhos
 `X-Plugin-Version`, `X-Minecraft-Version`, `X-Server-Platform`,
 `X-Java-Version` e `X-Paper-Channel`.
+
+## Login social
+
+A autenticação aceita somente OAuth por GitHub; login/cadastro por e-mail e
+senha fica desativado. Configure `GITHUB_CLIENT_ID` e `GITHUB_CLIENT_SECRET`
+junto com `BETTER_AUTH_SECRET` (mínimo de 32 caracteres) e `BETTER_AUTH_URL`
+(origem pública da API). `URL` e `DEV_URL` são as origens web aceitas.
+
+Cadastre estes callbacks nas aplicações OAuth dos provedores:
+
+```text
+${BETTER_AUTH_URL}/auth/callback/github
+```
+
+O início do fluxo é feito pelo endpoint social do Better Auth, com o cookie de
+sessão persistido no MongoDB:
+
+```text
+POST /auth/sign-in/social
+{ "provider": "github", "callbackURL": "https://pluginsx.vercel.app" }
+
+GET  /auth/get-session
+POST /auth/sign-out
+GET  /me
+```
+
+O `provider` deve ser `github`. Clientes web em outra origem
+precisam enviar cookies (`fetch` com `credentials: "include"`); `/me` retorna o
+usuário autenticado ou `401` quando não há sessão válida.
+
+## Key Premium por conta
+
+Uma conta autenticada pode gerar ou recuperar a própria key Plus com:
+
+```text
+POST /license/premium/generate
+```
+
+Envie o cookie de sessão. O endpoint retorna uma key `plus_...`; chamadas
+repetidas recuperam a mesma key. Um índice único no MongoDB por usuário mantém
+essa regra mesmo quando duas solicitações chegam ao mesmo tempo. Sem sessão, a
+API responde `401`.
+
+O SpawnerX consulta `GET /license/tier?key={chave}` para validar a licença e
+identificar se ela libera recursos `default` ou `plus`. O endpoint `/license/verify`
+continua disponível para clientes que só precisam saber se a chave é válida.

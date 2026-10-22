@@ -50,6 +50,42 @@ export async function generate(ownerId: string, tier: TierType): Promise<string>
   throw new Error("Unable to generate a unique license code.");
 }
 
+export async function generatePremiumForAccount(
+  ownerId: string,
+): Promise<{ code: string; created: boolean }> {
+  const existing = await License.findOne({ ownerId })
+    .select({ _id: 1 })
+    .lean();
+
+  if (existing) return { code: existing._id, created: false };
+
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const code = `plus_${createUuidBody(ownerId, "plus", attempt)}`;
+
+    try {
+      await License.create({
+        _id: code,
+        ownerId,
+        value: {
+          tier: "plus",
+          valid: true,
+        },
+      });
+      return { code, created: true };
+    } catch (error) {
+      if (!isDuplicateKeyError(error)) throw error;
+
+      // A simultaneous request may have won the unique ownerId index race.
+      const accountLicense = await License.findOne({ ownerId })
+        .select({ _id: 1 })
+        .lean();
+      if (accountLicense) return { code: accountLicense._id, created: false };
+    }
+  }
+
+  throw new Error("Unable to generate a unique premium license code.");
+}
+
 export async function view(license_key: string): Promise<LicenseView> {
   const key = license_key.trim();
   if (!key) {

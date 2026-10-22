@@ -1,32 +1,33 @@
-// import { betterAuth } from "better-auth";
-// import { admin, openAPI } from "better-auth/plugins";
-// import { Database } from "bun:sqlite";
+import { mongodbAdapter } from "@better-auth/mongo-adapter";
+import type { Auth } from "better-auth";
+import { betterAuth, type BetterAuthOptions } from "better-auth/minimal";
 
-// import { env } from "#env";
+import { env } from "../env.js";
+import { getDb } from "../database/connect.js";
+import mongoose from "mongoose";
 
-// export const auth = betterAuth({
-//   basePath: "/auth",
-//   baseURL: env.BETTER_AUTH_URL,
+// This module is loaded after connectDatabase() in server.ts so the shared
+// MongoDB connection is ready before Better Auth creates its adapter.
+const authOptions = {
+  appName: "PluginsX",
+  baseURL: env.BETTER_AUTH_URL,
+  basePath: "/auth",
+  secret: env.BETTER_AUTH_SECRET,
+  trustedOrigins: [env.URL, env.DEV_URL],
+  database: mongodbAdapter(getDb(), {
+    client: mongoose.connection.getClient(),
+  }),
+  socialProviders: {
+    github: {
+      clientId: env.GITHUB_CLIENT_ID,
+      clientSecret: env.GITHUB_CLIENT_SECRET,
+      scope: ["user:email"],
+    },
+  },
+  session: {
+    expiresIn: 60 * 60 * 24 * 7,
+    updateAge: 60 * 60 * 24,
+  },
+} satisfies BetterAuthOptions;
 
-//   trustedOrigins: [env.DEV_URL, env.URL],
-
-//   database: new Database("database.sqlite"),
-
-//   plugins: [admin(), openAPI()],
-
-//   advanced: {
-//     database: {
-//       generateId: false,
-//     },
-
-//     crossSubDomainCookies: {
-//       enabled: true,
-//     },
-//   },
-
-//   session: {
-//     expiresIn: 60 * 60 * 24 * 7,
-//   },
-
-//   socialProviders: {},
-// });
+export const auth: Auth<typeof authOptions> = betterAuth(authOptions);

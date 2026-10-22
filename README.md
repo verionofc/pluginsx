@@ -103,6 +103,7 @@ A documentação OpenAPI da API é servida pelo plugin `@elysiajs/openapi` duran
 | `POST` | `/license/generate` | Gera ou recupera a licença padrão do PluginsX. |
 | `GET` | `/license/view` | Consulta a licença padrão atual. |
 | `GET` | `/license/verify?key={chave}` | Verifica uma chave de licença. |
+| `GET` | `/license/tier?key={chave}` | Retorna `default`, `plus` ou `null` para uma chave inválida/inexistente. |
 | `GET` | `/about` | Retorna informações da API. |
 
 Os endpoints de plugins aceitam `platform=paper` (também é o padrão). Outras plataformas não são aceitas. Consulte [`api/README.md`](api/README.md) para exemplos detalhados de filtros e downloads.

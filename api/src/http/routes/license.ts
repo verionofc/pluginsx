@@ -2,8 +2,10 @@ import { Elysia } from "elysia";
 import { z } from "zod";
 
 import { License } from "../../database/models/License.js";
+import { authSessionPlugin } from "../plugins/better-auth.js";
 import {
   generate as generateLicense,
+  generatePremiumForAccount,
   isValid as isLicenseValid,
   view as viewLicense,
   type LicenseView,
@@ -98,6 +100,36 @@ const ensureDefaultLicense = async (): Promise<EnsuredDefaultLicense> => {
 };
 
 export const licenseRoutes = new Elysia({ prefix: "/license" })
+  .use(authSessionPlugin)
+  .get(
+    "/premium",
+    async ({ user }) => {
+      const license = await License.findOne({
+        ownerId: user.id,
+        "value.tier": "plus",
+      }).lean();
+
+      if (!license) return { code: null, tier: "plus" as const, valid: false };
+
+      const view = await viewLicense(license._id);
+      return {
+        code: view.valid ? license._id : null,
+        tier: "plus" as const,
+        valid: view.valid,
+      };
+    },
+    {
+      auth: true,
+      detail: {
+        summary: "Check the authenticated user's premium license",
+        tags: ["License"],
+      },
+      response: {
+        200: z.object({ code: z.string().nullable(), tier: z.literal("plus"), valid: z.boolean() }),
+        401: z.object({ code: z.string(), message: z.string() }),
+      },
+    },
+  )
   .post(
     "/generate",
     async () => {
@@ -118,6 +150,36 @@ export const licenseRoutes = new Elysia({ prefix: "/license" })
       },
       response: {
         200: generatedDefaultLicenseSchema,
+      },
+    },
+  )
+  .post(
+    "/premium/generate",
+    async ({ user }) => {
+      const generated = await generatePremiumForAccount(user.id);
+      const licenseView = await viewLicense(generated.code);
+
+      return {
+        code: generated.code,
+        tier: "plus" as const,
+        valid: licenseView.valid,
+        created: generated.created,
+      };
+    },
+    {
+      auth: true,
+      detail: {
+        summary: "Generate or retrieve the authenticated user's premium license",
+        tags: ["License"],
+      },
+      response: {
+        200: z.object({
+          code: z.string(),
+          tier: z.literal("plus"),
+          valid: z.boolean(),
+          created: z.boolean(),
+        }),
+        401: z.object({ code: z.string(), message: z.string() }),
       },
     },
   )
@@ -145,6 +207,27 @@ export const licenseRoutes = new Elysia({ prefix: "/license" })
       response: {
         200: defaultLicenseSchema,
         404: z.object({ message: z.string() }),
+      },
+    },
+  )
+  .get(
+    "/tier",
+    async ({ query, status }) => {
+      const key = typeof query.key === "string" ? query.key.trim() : "";
+      if (!key) return status(400, { message: "license key is required" });
+
+      const license = await viewLicense(key);
+      return license.valid ? (license.value?.tier ?? null) : null;
+    },
+    {
+      query: z.object({ key: z.string().min(1) }),
+      detail: {
+        summary: "Get the tier of a license key",
+        tags: ["License"],
+      },
+      response: {
+        200: z.enum(["default", "plus"]).nullable(),
+        400: z.object({ message: z.string() }),
       },
     },
   )
