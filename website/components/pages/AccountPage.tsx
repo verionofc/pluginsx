@@ -30,8 +30,13 @@ function LicensesPanel() {
   const [busy, setBusy] = useState("");
   const refresh = async () => {
     try {
-      const response = await fetch(`${apiUrl}/license/servers`, { credentials: "include" });
-      if (!response.ok) throw new Error("Não foi possível carregar as licenças.");
+      // Keep the request on the website origin so the authenticated session
+      // cookie is forwarded by the existing Next.js /license rewrite.
+      const response = await fetch("/license/servers", { credentials: "include" });
+      if (!response.ok) {
+        const result = await response.json().catch(() => null);
+        throw new Error(result?.message ?? "Não foi possível carregar as licenças.");
+      }
       setLicenses(await response.json());
     } catch (error) { setMessage(error instanceof Error ? error.message : "Falha ao carregar licenças."); }
     finally { setLoading(false); }
@@ -44,7 +49,7 @@ function LicensesPanel() {
     if (!window.confirm(prompt)) return;
     setBusy(server.id); setMessage("");
     try {
-      const response = await fetch(`${apiUrl}/license/servers/${server.id}/${action}`, { method: "POST", credentials: "include" });
+      const response = await fetch(`/license/servers/${server.id}/${action}`, { method: "POST", credentials: "include" });
       if (!response.ok) throw new Error((await response.json()).message ?? "A operação falhou.");
       setMessage(action === "approve" ? "Servidor autorizado." : action === "remove" ? "Servidor removido e autorização revogada." : "Solicitação rejeitada.");
       await refresh();
