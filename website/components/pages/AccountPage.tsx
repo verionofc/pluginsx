@@ -42,8 +42,10 @@ function LicensesPanel() {
     finally { setLoading(false); }
   };
   useEffect(() => { void refresh(); }, []);
-  async function act(server: ServerActivation, action: "approve" | "reject" | "remove") {
-    const prompt = action === "remove"
+  async function act(server: ServerActivation, action: "approve" | "reject" | "remove" | "delete") {
+    const prompt = action === "delete"
+      ? `Apagar o registro antigo de ${server.name}? Esta ação não pode ser desfeita.`
+      : action === "remove"
       ? `Remover ${server.name}? Isso desvinculará esta instalação da licença.`
       : `${action === "approve" ? "Autorizar" : "Rejeitar"} a solicitação de ${server.name}?`;
     if (!window.confirm(prompt)) return;
@@ -51,7 +53,7 @@ function LicensesPanel() {
     try {
       const response = await fetch(`/license/servers/${server.id}/${action}`, { method: "POST", credentials: "include" });
       if (!response.ok) throw new Error((await response.json()).message ?? "A operação falhou.");
-      setMessage(action === "approve" ? "Servidor autorizado." : action === "remove" ? "Servidor removido e autorização revogada." : "Solicitação rejeitada.");
+      setMessage(action === "approve" ? "Servidor autorizado." : action === "remove" ? "Servidor removido e autorização revogada." : action === "delete" ? "Registro antigo apagado." : "Solicitação rejeitada.");
       await refresh();
     } catch (error) { setMessage(error instanceof Error ? error.message : "A operação falhou."); }
     finally { setBusy(""); }
@@ -68,7 +70,8 @@ function LicensesPanel() {
         <p className="mt-2 break-all font-mono text-[11px] text-white/40">ID {server.serverId}</p><p className="mt-1 text-xs text-white/55">Minecraft {server.minecraftVersion} · {server.implementation} {server.implementationVersion} · SpawnerX {server.pluginVersion}</p>
         <p className="mt-1 text-xs text-white/40">Registrado {new Date(server.createdAt).toLocaleString("pt-BR")} · Última validação: {server.lastValidatedAt ? new Date(server.lastValidatedAt).toLocaleString("pt-BR") : "sem dados"} · Conexão: desconhecida</p>
         {server.state === "PENDING" && <div className="mt-3 flex gap-2"><button disabled={busy === server.id} onClick={() => void act(server, "approve")} className="rounded-lg bg-[#a6cf74] px-3 py-2 text-xs font-bold text-[#17210f] disabled:opacity-50">Autorizar</button><button disabled={busy === server.id} onClick={() => void act(server, "reject")} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-white/75 disabled:opacity-50">Rejeitar</button></div>}
-        {server.state !== "REVOKED" && <button disabled={busy === server.id} onClick={() => void act(server, "remove")} className="mt-3 rounded-lg border border-red-200/15 px-3 py-2 text-xs text-red-100/80 disabled:opacity-50">Remover servidor</button>}
+        {["PENDING", "ACTIVE"].includes(server.state) && <button disabled={busy === server.id} onClick={() => void act(server, "remove")} className="mt-3 rounded-lg border border-red-200/15 px-3 py-2 text-xs text-red-100/80 disabled:opacity-50">Remover servidor</button>}
+        {["REVOKED", "REJECTED", "EXPIRED", "ERROR", "INACTIVE"].includes(server.state) && <button disabled={busy === server.id} onClick={() => void act(server, "delete")} className="mt-3 rounded-lg border border-white/10 px-3 py-2 text-xs text-white/55 hover:bg-white/5 disabled:opacity-50">Apagar registro antigo</button>}
       </div>)}</div>
     </article>)}</div>}
   </section>;

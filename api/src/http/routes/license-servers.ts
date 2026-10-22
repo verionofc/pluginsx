@@ -109,11 +109,19 @@ export const licenseServerRoutes = new Elysia({ prefix: "/license" })
     }));
   }, { auth: true, detail: { summary: "List current user's licenses and servers", tags: ["License"] } })
   .post("/servers/:id/:action", async ({ user, params, status }) => {
-    if (params.action !== "approve" && params.action !== "reject" && params.action !== "remove") return status(400, { message: "Invalid action" });
+    if (!["approve", "reject", "remove", "delete"].includes(params.action)) return status(400, { message: "Invalid action" });
     const record = await LicenseServer.findById(params.id);
     if (!record) return status(404, { message: "Server activation not found" });
     const owned = await License.exists({ _id: record.licenseId, ownerId: user.id, "value.tier": "plus" });
     if (!owned) return status(404, { message: "Server activation not found" });
+    if (params.action === "delete") {
+      const deleted = await LicenseServer.deleteOne({
+        _id: record._id,
+        state: { $in: ["REVOKED", "REJECTED", "EXPIRED", "ERROR", "INACTIVE"] },
+      });
+      if (!deleted.deletedCount) return status(409, { message: "Only closed server connections can be deleted" });
+      return { id: record._id, deleted: true };
+    }
     const now = new Date();
     if (params.action === "approve" || params.action === "reject") {
       const next = params.action === "approve" ? "ACTIVE" : "REJECTED";
@@ -141,4 +149,4 @@ export const licenseServerRoutes = new Elysia({ prefix: "/license" })
       }
     }
     return publicRecord(record);
-  }, { auth: true, params: z.object({ id: z.string().uuid(), action: z.enum(["approve", "reject", "remove"]) }), detail: { summary: "Approve, reject, or revoke an owned server activation", tags: ["License"] } });
+  }, { auth: true, params: z.object({ id: z.string().uuid(), action: z.enum(["approve", "reject", "remove", "delete"]) }), detail: { summary: "Manage an owned server activation", tags: ["License"] } });
