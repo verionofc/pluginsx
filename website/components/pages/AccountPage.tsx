@@ -7,6 +7,8 @@ import {
   TbBrandGithub,
   TbCheck,
   TbChevronRight,
+  TbEye,
+  TbEyeOff,
   TbLoader2,
   TbLogout2,
   TbShieldCheck,
@@ -28,6 +30,7 @@ function LicensesPanel() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState("");
+  const [visibleKeys, setVisibleKeys] = useState<Record<string, boolean>>({});
   const refresh = async () => {
     try {
       // Keep the request on the website origin so the authenticated session
@@ -63,7 +66,7 @@ function LicensesPanel() {
     <div className="mb-4"><p className="font-minecraft-text text-xs font-bold uppercase tracking-[0.16em] text-[#b4d991]">Licenciamento</p><h3 id="licenses-title" className="mt-1 text-xl font-bold text-white">Licenças e servidores</h3></div>
     {message && <p role="status" className="mb-4 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/80">{message}</p>}
     {loading ? <p className="text-sm text-white/50">Carregando licenças…</p> : licenses.length === 0 ? <p className="text-sm text-white/50">Nenhuma licença vinculada a esta conta.</p> : <div className="grid gap-4">{licenses.map((license) => <article key={license.id} className="rounded-2xl border border-white/10 bg-black/20 p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3"><div><h4 className="font-bold text-white">SpawnerX {license.tier === "plus" ? "Plus" : "Standard"}</h4><p className="mt-1 break-all font-mono text-xs text-white/45">{license.id}</p></div><button type="button" onClick={() => void navigator.clipboard.writeText(license.id)} className="rounded-lg border border-white/10 px-3 py-2 text-xs text-white/70 hover:bg-white/10">Copiar ID</button></div>
+      <div className="flex flex-wrap items-start justify-between gap-3"><div><h4 className="font-bold text-white">SpawnerX {license.tier === "plus" ? "Plus" : "Standard"}</h4><p className="mt-1 break-all font-mono text-xs text-white/45">{visibleKeys[license.id] ? license.id : `••••••••••••${license.id.slice(-4)}`}</p></div><div className="flex gap-2"><button type="button" aria-label={visibleKeys[license.id] ? "Ocultar key" : "Mostrar key"} aria-pressed={Boolean(visibleKeys[license.id])} onClick={() => setVisibleKeys((keys) => ({ ...keys, [license.id]: !keys[license.id] }))} className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-xs text-white/70 hover:bg-white/10">{visibleKeys[license.id] ? <TbEyeOff aria-hidden="true" className="size-4" /> : <TbEye aria-hidden="true" className="size-4" />}{visibleKeys[license.id] ? "Ocultar key" : "Mostrar key"}</button><button type="button" onClick={() => void navigator.clipboard.writeText(license.id)} className="rounded-lg border border-white/10 px-3 py-2 text-xs text-white/70 hover:bg-white/10">Copiar key</button></div></div>
       <p className="mt-3 text-sm text-[#c2e3a0]">{license.valid ? "Licença válida" : "Licença inválida"} · {license.used}/{license.limit} servidores utilizados</p>
       <div className="mt-3 grid gap-3">{license.servers.map((server) => <div key={server.id} className="rounded-xl border border-white/8 bg-white/[0.025] p-3">
         <div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-sm text-white">{server.name}</strong><span className="rounded-full border border-[#a6cf74]/20 bg-[#a6cf74]/10 px-2.5 py-1 text-xs text-[#c2e3a0]">{label[server.state] ?? server.state}</span></div>
