@@ -41,7 +41,7 @@ const trustedWebOrigins = [env.DEV_URL, env.URL].map(
 const app = new Elysia({ name: "PluginsX API", adapter: node() })
   .use(
     cors({
-      origin: ({ request }) =>
+      origin: (request) =>
         trustedWebOrigins.includes(request.headers.get("origin") ?? ""),
       methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
       credentials: true,
