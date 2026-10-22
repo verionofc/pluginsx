@@ -6,6 +6,10 @@ import { env } from "../env.js";
 import { getDb } from "../database/connect.js";
 import mongoose from "mongoose";
 
+const trustedOrigins = [env.URL, env.DEV_URL].map(
+  (url) => new URL(url).origin,
+);
+
 // This module is loaded after connectDatabase() in server.ts so the shared
 // MongoDB connection is ready before Better Auth creates its adapter.
 const authOptions = {
@@ -13,7 +17,7 @@ const authOptions = {
   baseURL: env.BETTER_AUTH_URL,
   basePath: "/auth",
   secret: env.BETTER_AUTH_SECRET,
-  trustedOrigins: [env.URL, env.DEV_URL],
+  trustedOrigins,
   database: mongodbAdapter(getDb(), {
     client: mongoose.connection.getClient(),
   }),

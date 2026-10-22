@@ -32,10 +32,17 @@ const [
 // Create the unique owner index before accepting premium key requests.
 await License.init();
 
+// Normalize configured site URLs so a trailing slash does not prevent an
+// otherwise valid browser Origin from matching the CORS allowlist.
+const trustedWebOrigins = [env.DEV_URL, env.URL].map(
+  (url) => new URL(url).origin,
+);
+
 const app = new Elysia({ name: "PluginsX API", adapter: node() })
   .use(
     cors({
-      origin: [env.DEV_URL, env.URL],
+      origin: ({ request }) =>
+        trustedWebOrigins.includes(request.headers.get("origin") ?? ""),
       methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
       credentials: true,
       allowedHeaders: ["Content-Type", "Authorization", "Cookie"],
