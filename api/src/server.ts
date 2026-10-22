@@ -22,15 +22,20 @@ const [
   { userRoutes },
   { licenseRoutes },
   { License },
+  { LicenseServer },
+  { licenseServerRoutes },
 ] = await Promise.all([
   import("./http/plugins/better-auth.js"),
   import("./http/routes/user.js"),
   import("./http/routes/license.js"),
   import("./database/models/License.js"),
+  import("./database/models/LicenseServer.js"),
+  import("./http/routes/license-servers.js"),
 ]);
 
 // Create the unique owner index before accepting premium key requests.
 await License.init();
+await LicenseServer.init();
 
 // Normalize configured site URLs so a trailing slash does not prevent an
 // otherwise valid browser Origin from matching the CORS allowlist.
@@ -89,6 +94,7 @@ const app = new Elysia({ name: "PluginsX API", adapter: node() })
   .use(userRoutes)
   .use(aboutRoutes)
   .use(licenseRoutes)
+  .use(licenseServerRoutes)
   .use(pluginRoutes)
 
   .listen(

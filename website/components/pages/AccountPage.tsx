@@ -16,6 +16,59 @@ import {
 
 import { apiUrl, authClient } from "@/lib/auth-client";
 
+type ServerActivation = {
+  id: string; serverId: string; name: string; minecraftVersion: string;
+  implementation: string; implementationVersion: string; pluginVersion: string;
+  state: string; createdAt: string; lastValidatedAt: string | null; connection: string;
+};
+type AccountLicense = { id: string; tier: string; valid: boolean; used: number; limit: number; servers: ServerActivation[] };
+
+function LicensesPanel() {
+  const [licenses, setLicenses] = useState<AccountLicense[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState("");
+  const refresh = async () => {
+    try {
+      const response = await fetch(`${apiUrl}/license/servers`, { credentials: "include" });
+      if (!response.ok) throw new Error("Não foi possível carregar as licenças.");
+      setLicenses(await response.json());
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Falha ao carregar licenças."); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { void refresh(); }, []);
+  async function act(server: ServerActivation, action: "approve" | "reject" | "remove") {
+    const prompt = action === "remove"
+      ? `Remover ${server.name}? Isso desvinculará esta instalação da licença.`
+      : `${action === "approve" ? "Autorizar" : "Rejeitar"} a solicitação de ${server.name}?`;
+    if (!window.confirm(prompt)) return;
+    setBusy(server.id); setMessage("");
+    try {
+      const response = await fetch(`${apiUrl}/license/servers/${server.id}/${action}`, { method: "POST", credentials: "include" });
+      if (!response.ok) throw new Error((await response.json()).message ?? "A operação falhou.");
+      setMessage(action === "approve" ? "Servidor autorizado." : action === "remove" ? "Servidor removido e autorização revogada." : "Solicitação rejeitada.");
+      await refresh();
+    } catch (error) { setMessage(error instanceof Error ? error.message : "A operação falhou."); }
+    finally { setBusy(""); }
+  }
+  const label: Record<string, string> = { PENDING: "Aguardando aprovação", ACTIVE: "Autorizado", INACTIVE: "Inativo", REJECTED: "Rejeitado", EXPIRED: "Expirado", REVOKED: "Revogado", ERROR: "Erro" };
+  return <section className="mt-8" aria-labelledby="licenses-title">
+    <div className="mb-4"><p className="font-minecraft-text text-xs font-bold uppercase tracking-[0.16em] text-[#b4d991]">Licenciamento</p><h3 id="licenses-title" className="mt-1 text-xl font-bold text-white">Licenças e servidores</h3></div>
+    {message && <p role="status" className="mb-4 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/80">{message}</p>}
+    {loading ? <p className="text-sm text-white/50">Carregando licenças…</p> : licenses.length === 0 ? <p className="text-sm text-white/50">Nenhuma licença vinculada a esta conta.</p> : <div className="grid gap-4">{licenses.map((license) => <article key={license.id} className="rounded-2xl border border-white/10 bg-black/20 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3"><div><h4 className="font-bold text-white">SpawnerX {license.tier === "plus" ? "Plus" : "Standard"}</h4><p className="mt-1 break-all font-mono text-xs text-white/45">{license.id}</p></div><button type="button" onClick={() => void navigator.clipboard.writeText(license.id)} className="rounded-lg border border-white/10 px-3 py-2 text-xs text-white/70 hover:bg-white/10">Copiar ID</button></div>
+      <p className="mt-3 text-sm text-[#c2e3a0]">{license.valid ? "Licença válida" : "Licença inválida"} · {license.used}/{license.limit} servidores utilizados</p>
+      <div className="mt-3 grid gap-3">{license.servers.map((server) => <div key={server.id} className="rounded-xl border border-white/8 bg-white/[0.025] p-3">
+        <div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-sm text-white">{server.name}</strong><span className="rounded-full border border-[#a6cf74]/20 bg-[#a6cf74]/10 px-2.5 py-1 text-xs text-[#c2e3a0]">{label[server.state] ?? server.state}</span></div>
+        <p className="mt-2 break-all font-mono text-[11px] text-white/40">ID {server.serverId}</p><p className="mt-1 text-xs text-white/55">Minecraft {server.minecraftVersion} · {server.implementation} {server.implementationVersion} · SpawnerX {server.pluginVersion}</p>
+        <p className="mt-1 text-xs text-white/40">Registrado {new Date(server.createdAt).toLocaleString("pt-BR")} · Última validação: {server.lastValidatedAt ? new Date(server.lastValidatedAt).toLocaleString("pt-BR") : "sem dados"} · Conexão: desconhecida</p>
+        {server.state === "PENDING" && <div className="mt-3 flex gap-2"><button disabled={busy === server.id} onClick={() => void act(server, "approve")} className="rounded-lg bg-[#a6cf74] px-3 py-2 text-xs font-bold text-[#17210f] disabled:opacity-50">Autorizar</button><button disabled={busy === server.id} onClick={() => void act(server, "reject")} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-white/75 disabled:opacity-50">Rejeitar</button></div>}
+        {server.state !== "REVOKED" && <button disabled={busy === server.id} onClick={() => void act(server, "remove")} className="mt-3 rounded-lg border border-red-200/15 px-3 py-2 text-xs text-red-100/80 disabled:opacity-50">Remover servidor</button>}
+      </div>)}</div>
+    </article>)}</div>}
+  </section>;
+}
+
 export function AccountPage() {
   const { data: session, isPending } = authClient.useSession();
   const [isSigningIn, setIsSigningIn] = useState(false);
@@ -168,7 +221,7 @@ export function AccountPage() {
                 </p>
               </output>
             ) : session ? (
-              <div className="mx-auto w-full max-w-md">
+              <div className="mx-auto w-full max-w-2xl">
                 <div className="mb-8 flex items-start justify-between gap-4">
                   <div>
                     <p className="font-minecraft-text mb-2 text-xs font-bold uppercase tracking-[0.16em] text-[#b4d991]">
@@ -250,6 +303,7 @@ export function AccountPage() {
                     Sair da conta
                   </button>
                 </div>
+                <LicensesPanel />
               </div>
             ) : (
               <div className="mx-auto w-full max-w-md">

@@ -9,6 +9,7 @@ export interface LicenseInterface {
     tier: LicenseTier;
     valid: boolean;
   };
+  serverSlots?: number;
 }
 
 const LicenseSchema = new Schema<LicenseInterface>({
@@ -23,6 +24,7 @@ const LicenseSchema = new Schema<LicenseInterface>({
     },
     valid: { type: Boolean, default: true },
   },
+  serverSlots: { type: Number, default: 0, min: 0, max: 3 },
 });
 
 // Sparse uniqueness permits the shared default license while enforcing one
