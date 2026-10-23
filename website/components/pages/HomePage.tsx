@@ -81,6 +81,10 @@ export function PluginInstaller() {
     (release) => release.minecraft === selectedMinecraft,
   );
   const pluginVersions = [...new Set(releasesForMinecraft.map((release) => release.pluginVersion))];
+  const latestVersionIndex = pluginVersions.indexOf(selectedPlugin?.latestVersion ?? "");
+  if (latestVersionIndex > 0) {
+    pluginVersions.unshift(pluginVersions.splice(latestVersionIndex, 1)[0]);
+  }
   const selectedRelease =
     releasesForMinecraft.find((release) => release.pluginVersion === selectedPluginVersion) ??
     (selectedPlugin
@@ -277,7 +281,11 @@ export function PluginInstaller() {
                   disabled={isLoadingReleases || pluginVersions.length === 0}
                   className="mt-2 h-12 min-w-0 w-full rounded-lg border border-[#718667]/35 bg-[#0c130f] px-3 text-sm text-[#eff5df] outline-none transition focus:border-[#a6cf74] disabled:opacity-50"
                 >
-                  {pluginVersions.map((version) => <option key={version} value={version}>{version}</option>)}
+                  {pluginVersions.map((version) => (
+                    <option key={version} value={version}>
+                      {version}{version === selectedPlugin?.latestVersion ? " (mais recente)" : ""}
+                    </option>
+                  ))}
                 </select>
               </label>
             </div>
