@@ -45,7 +45,7 @@ export function Icon({ variant = "id", animation, isOpen = false }: IconProps) {
   function renderText() {
     if (isOpen) {
       return (
-        <span className="ml-2 font-minecraft-text text-3xl font-black leading-none tracking-[-0.04em]">
+        <span className="ml-2 font-minecraft-text text-2xl font-black leading-none tracking-[-0.04em]">
           <span>Plugins</span>
           <span className="text-primary font-identify">X</span>
         </span>
@@ -59,7 +59,7 @@ export function Icon({ variant = "id", animation, isOpen = false }: IconProps) {
             <span
               className={clsx(
                 "ml-2 overflow-hidden whitespace-nowrap",
-                "font-minecraft-text text-3xl font-black leading-none tracking-[-0.04em]",
+                "font-minecraft-text text-2xl font-black leading-none tracking-[-0.04em]",
               )}
             >
               {title}
@@ -83,7 +83,7 @@ export function Icon({ variant = "id", animation, isOpen = false }: IconProps) {
             }}
             className={clsx(
               "ml-2 overflow-hidden whitespace-nowrap",
-              "font-minecraft-text text-3xl font-black leading-none tracking-[-0.04em]",
+              "font-minecraft-text text-2xl font-black leading-none tracking-[-0.04em]",
             )}
           >
             <span>Plugins</span>
@@ -97,7 +97,7 @@ export function Icon({ variant = "id", animation, isOpen = false }: IconProps) {
             <span
               className={clsx(
                 "ml-2 overflow-hidden whitespace-nowrap",
-                "font-minecraft-text text-3xl font-black leading-none tracking-[-0.04em]",
+                "font-minecraft-text text-2xl font-black leading-none tracking-[-0.04em]",
               )}
             >
               {title}
@@ -109,7 +109,7 @@ export function Icon({ variant = "id", animation, isOpen = false }: IconProps) {
           <motion.span
             className={clsx(
               "ml-2 overflow-hidden whitespace-nowrap",
-              "font-minecraft-text text-3xl font-black leading-none tracking-[-0.04em]",
+              "font-minecraft-text text-2xl font-black leading-none tracking-[-0.04em]",
             )}
             animate={{
               width: isActive ? "auto" : 0,
@@ -144,7 +144,7 @@ export function Icon({ variant = "id", animation, isOpen = false }: IconProps) {
 
       default:
         return (
-          <span className="ml-2 font-minecraft-text text-3xl font-black leading-none tracking-[-0.04em]">
+          <span className="ml-2 font-minecraft-text text-2xl font-black leading-none tracking-[-0.04em]">
             <span>Plugins</span>
             <span className="text-primary font-identify">X</span>
           </span>

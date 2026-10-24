@@ -18,8 +18,10 @@ const nextConfig: NextConfig = {
 
     return [
       { source: "/auth/:path*", destination: `${apiUrl}/auth/:path*` },
+      { source: "/about/:path*", destination: `${apiUrl}/about/:path*` },
       { source: "/license/:path*", destination: `${apiUrl}/license/:path*` },
       { source: "/billing/:path*", destination: `${apiUrl}/billing/:path*` },
+      { source: "/panel/:path*", destination: `${apiUrl}/panel/:path*` },
       { source: "/me/:path*", destination: `${apiUrl}/me/:path*` },
     ];
   },

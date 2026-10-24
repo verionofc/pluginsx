@@ -1,0 +1,45 @@
+{
+  "currency": "BRL",
+  "locale": "pt-BR",
+  "plans": {
+    "trial": {
+      "id": "free",
+      "name": "Trial Key",
+      "amount": 0,
+      "durationHours": 12,
+      "serverLimit": 1,
+      "oneTime": true
+    },
+    "monthly": {
+      "id": "monthly",
+      "name": "Creeper",
+      "amount": 11.9,
+      "interval": "month",
+      "recurrence": {
+        "frequency": 1,
+        "frequencyType": "months"
+      },
+      "serverLimit": 3,
+      "oneTime": false
+    },
+    "lifetime": {
+      "id": "lifetime",
+      "name": "Ender Dragon",
+      "amount": 59.9,
+      "serverLimit": 5,
+      "oneTime": true
+    },
+    "aether": {
+      "id": "aether",
+      "name": "Aether",
+      "amount": 149.9,
+      "serverLimit": 250,
+      "oneTime": true
+    }
+  },
+  "serverSlot": {
+    "name": "Vaga extra de servidor",
+    "amount": 4.9,
+    "maxPerPurchase": 99
+  }
+}

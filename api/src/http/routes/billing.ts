@@ -7,18 +7,42 @@ import { env } from "../../env.js";
 import { License } from "../../database/models/License.js";
 import { PlanAccess } from "../../database/models/PlanAccess.js";
 import { PlanPurchase } from "../../database/models/PlanPurchase.js";
+import { BillingTransaction } from "../../database/models/BillingTransaction.js";
 import { PaymentEvent } from "../../database/models/PaymentEvent.js";
 import { BillingRateLimit } from "../../database/models/BillingRateLimit.js";
 import { generateTemporaryPremiumLicense } from "../plugins/license.js";
 import { authSessionPlugin } from "../plugins/better-auth.js";
 import { hasPremiumAccess, hasTrustedWebOrigin } from "../plugins/plan-access.js";
-import { PLAN_CATALOG, PLAN_PRICES, addOneCalendarMonth, safeReturnPath } from "../plugins/billing-config.js";
+import {
+  MAX_SERVER_SLOTS_PER_PURCHASE,
+  PLAN_CATALOG,
+  PLANS_CONFIG,
+  SERVER_SLOT_PRICE,
+  TRIAL_DURATION_HOURS,
+  TRIAL_DURATION_MS,
+  addRecurringInterval,
+  formatPlanAmount,
+  getPlanConfig,
+  safeReturnPath,
+} from "../plugins/billing-config.js";
+
+const checkoutBody = z.object({
+  plan: z.enum(["monthly", "lifetime", "aether", "server_slots"]),
+  serverSlots: z.number().int().min(0).max(MAX_SERVER_SLOTS_PER_PURCHASE).default(0),
+  returnTo: z.string().optional(),
+}).superRefine((value, context) => {
+  if (value.plan === "monthly" && value.serverSlots > 0) {
+    context.addIssue({ code: "custom", path: ["serverSlots"], message: "Slots extras não podem ser incluídos em uma assinatura mensal." });
+  }
+  if (value.plan === "server_slots" && value.serverSlots < 1) {
+    context.addIssue({ code: "custom", path: ["serverSlots"], message: "Selecione pelo menos uma vaga de servidor." });
+  }
+});
 
 const getClient = () => {
   if (!env.MERCADOPAGO_ACCESS_TOKEN) throw new Error("Mercado Pago is not configured");
   return new MercadoPagoConfig({ accessToken: env.MERCADOPAGO_ACCESS_TOKEN });
 };
-const TRIAL_DURATION_MS = 12 * 60 * 60 * 1000;
 const appUrl = () => {
   if (!env.NEXT_PUBLIC_APP_URL) throw new Error("Public website URL is not configured");
   return env.NEXT_PUBLIC_APP_URL.replace(/\/$/, "");
@@ -113,7 +137,7 @@ async function getActiveTrialLicense(userId: string, now = new Date()) {
 const getCurrentAccess = async (userId: string) => {
   const access = await PlanAccess.findOne({ userId }).lean();
   if (!access) return null;
-  if (access.plan === "lifetime" && access.status === "active") return access;
+  if ((access.plan === "lifetime" || access.plan === "aether") && access.status === "active") return access;
   if ((access.plan === "monthly" || access.plan === "free") && access.status === "active" && access.expiresAt && access.expiresAt > new Date()) return access;
   if (access.plan === "free" && access.status === "trial" && access.expiresAt && access.expiresAt > new Date()) return access;
   const expired = access.expiresAt && access.expiresAt <= new Date();
@@ -123,15 +147,25 @@ const getCurrentAccess = async (userId: string) => {
 export const billingRoutes = new Elysia({ prefix: "/billing" })
   .use(authSessionPlugin)
   .get("/catalog", () => ({
-    currency: "BRL",
+    currency: PLANS_CONFIG.currency,
     trialEnabled: env.TEMP_LICENSE_TRIAL_ENABLED,
     plans: env.TEMP_LICENSE_TRIAL_ENABLED ? PLAN_CATALOG : PLAN_CATALOG.filter((plan) => plan.id !== "free"),
+    serverSlot: {
+      amount: SERVER_SLOT_PRICE,
+      formattedPrice: formatPlanAmount(SERVER_SLOT_PRICE),
+      name: PLANS_CONFIG.serverSlot.name,
+      maxPerPurchase: MAX_SERVER_SLOTS_PER_PURCHASE,
+    },
   }))
   .get("/state", async ({ user }) => {
     await restoreLegacyTrialUse(user.id);
     const access = await getCurrentAccess(user.id);
     const temporaryLicense = await getActiveTrialLicense(user.id);
     const lastPurchase = await PlanPurchase.findOne({ userId: user.id }).sort({ createdAt: -1 }).select({ plan: 1, status: 1, createdAt: 1 }).lean();
+    const [slotPurchases] = await PlanPurchase.aggregate<{ total: number }>([
+      { $match: { userId: user.id, status: "approved" } },
+      { $group: { _id: null, total: { $sum: { $ifNull: ["$serverSlots", 0] } } } },
+    ]);
     return {
       access: access ? {
         plan: access.plan,
@@ -141,9 +175,11 @@ export const billingRoutes = new Elysia({ prefix: "/billing" })
         startsAt: access.startsAt,
         expiresAt: access.expiresAt,
         cancelAtPeriodEnd: access.cancelAtPeriodEnd,
+        canCancelSubscription: access.plan === "monthly" && access.status === "active" && Boolean(access.mercadoPagoSubscriptionId) && !access.cancelAtPeriodEnd,
       } : null,
       temporaryLicense,
       lastPurchase,
+      additionalServerSlots: Number(slotPurchases?.total ?? 0),
     };
   }, { auth: true })
   .post("/trial", async ({ user, status, request }) => {
@@ -178,7 +214,7 @@ export const billingRoutes = new Elysia({ prefix: "/billing" })
         if (activeTrialLicense) {
           return { plan: "trial", status: "active", tier: "plus", ...activeTrialLicense };
         }
-        return status(409, { code: "TRIAL_ALREADY_USED", message: "Esta conta já usou sua licença temporária. Cada conta recebe uma única key válida por 12 horas." });
+        return status(409, { code: "TRIAL_ALREADY_USED", message: `Esta conta já usou sua licença temporária. Cada conta recebe uma única key válida por ${TRIAL_DURATION_HOURS} horas.` });
       }
     } catch (error) {
       await License.deleteOne({ _id: code, sourcePlan: "trial" });
@@ -187,7 +223,7 @@ export const billingRoutes = new Elysia({ prefix: "/billing" })
         if (activeTrialLicense) {
           return { plan: "trial", status: "active", tier: "plus", ...activeTrialLicense };
         }
-        return status(409, { code: "TRIAL_ALREADY_USED", message: "Esta conta já usou sua licença temporária. Cada conta recebe uma única key válida por 12 horas." });
+        return status(409, { code: "TRIAL_ALREADY_USED", message: `Esta conta já usou sua licença temporária. Cada conta recebe uma única key válida por ${TRIAL_DURATION_HOURS} horas.` });
       }
       throw error;
     }
@@ -196,31 +232,57 @@ export const billingRoutes = new Elysia({ prefix: "/billing" })
   .post("/checkout", async ({ user, body, status, request }) => {
     if (!hasTrustedWebOrigin(request)) return status(403, { message: "Origem da solicitação não permitida." });
     if (!(await rateLimit(user.id, "checkout", 5, 60_000))) return status(429, { message: "Muitas tentativas de checkout. Aguarde um minuto." });
-    const { plan, returnTo } = z.object({ plan: z.enum(["monthly", "lifetime"]), returnTo: z.string().optional() }).parse(body);
+    const { plan, serverSlots, returnTo } = checkoutBody.parse(body);
     const safeReturnTo = safeReturnPath(returnTo);
     const current = await PlanAccess.findOne({ userId: user.id }).lean();
-    if (current?.plan === "lifetime" && current.status === "active") return status(409, { message: "O plano Lifetime já está ativo." });
-    if (current?.plan === "monthly" && ["active", "pending", "past_due"].includes(current.status)) return status(409, { message: "Já existe uma assinatura mensal. Gerencie-a antes de contratar outro plano." });
+    if (plan === "server_slots") {
+      if (!(await hasPremiumAccess(user.id))) {
+        const paidPlans = [PLANS_CONFIG.plans.monthly.name, PLANS_CONFIG.plans.lifetime.name, PLANS_CONFIG.plans.aether.name];
+        return status(409, { message: `Ative um plano ${paidPlans.join(", ")} antes de comprar vagas extras.` });
+      }
+    } else {
+      if ((plan === "lifetime" || plan === "aether") && (current?.plan === "lifetime" || current?.plan === "aether") && current.status === "active") return status(409, { message: "Um plano vitalício já está ativo." });
+      if (current?.plan === "monthly" && ["active", "pending", "past_due"].includes(current.status)) return status(409, { message: "Já existe uma assinatura mensal. Gerencie-a antes de contratar outro plano." });
+    }
     const externalReference = randomUUID();
-    const price = PLAN_PRICES[plan];
-    const purchase = await PlanPurchase.create({ userId: user.id, plan, amount: price, currency: "BRL", externalReference, status: "pending" });
+    const planConfig = plan === "server_slots" ? null : getPlanConfig(plan);
+    const planPrice = planConfig?.amount ?? 0;
+    const price = Math.round((planPrice + serverSlots * SERVER_SLOT_PRICE) * 100) / 100;
+    const purchase = await PlanPurchase.create({ userId: user.id, plan, serverSlots, amount: price, currency: PLANS_CONFIG.currency, externalReference, status: "pending" });
     const client = getClient();
     const base = appUrl();
+    const returnPage = safeReturnTo === "/cart" ? "/cart" : "/plans";
+    const returnUrl = (result: "success" | "pending" | "failure" | "subscription") =>
+      `${base}${returnPage}?return=${result}&purchase=${externalReference}&returnTo=${encodeURIComponent(safeReturnTo)}`;
     try {
-      if (plan === "lifetime") {
+      if (plan === "lifetime" || plan === "aether" || plan === "server_slots") {
+        const planItem = planConfig
+          ? {
+              id: `pluginsx-${plan}`,
+              title: `PluginsX | ${planConfig.name}`,
+              description: `Acesso vitalício Premium/Plus do PluginsX com até ${planConfig.serverLimit} servidores.`,
+              quantity: 1,
+              currency_id: PLANS_CONFIG.currency as "BRL",
+              unit_price: planConfig.amount,
+            }
+          : null;
+        const items = [
+          ...(planItem ? [planItem] : []),
+          ...(serverSlots > 0 ? [{ id: "pluginsx-server-slot", title: `PluginsX | ${PLANS_CONFIG.serverSlot.name}`, description: "Uma vaga adicional permanente para uma licença Plus ativa.", quantity: serverSlots, currency_id: PLANS_CONFIG.currency as "BRL", unit_price: SERVER_SLOT_PRICE }] : []),
+        ];
         const preference = await new Preference(client).create({
           requestOptions: { idempotencyKey: externalReference },
           body: {
             external_reference: externalReference,
-            items: [{ id: "pluginsx-ender-dragon-lifetime", title: "PluginsX | Ender Dragon", description: "Acesso vitalício Premium/Plus do PluginsX. Pagamento único, sem renovação.", quantity: 1, currency_id: "BRL", unit_price: price }],
-            back_urls: { success: `${base}/plans?return=success&returnTo=${encodeURIComponent(safeReturnTo)}`, pending: `${base}/plans?return=pending&returnTo=${encodeURIComponent(safeReturnTo)}`, failure: `${base}/plans?return=failure&returnTo=${encodeURIComponent(safeReturnTo)}` },
+            items,
+            back_urls: { success: returnUrl("success"), pending: returnUrl("pending"), failure: returnUrl("failure") },
             notification_url: `${env.URL.replace(/\/$/, "")}/billing/webhook`,
             auto_return: "approved",
           },
         });
         if (!preference.id || !preference.init_point) throw new Error("Checkout preference missing redirect URL");
         await PlanPurchase.updateOne({ _id: purchase._id }, { $set: { preferenceId: preference.id } });
-        return { checkoutUrl: preference.init_point };
+        return { checkoutUrl: preference.init_point, purchaseReference: externalReference };
       }
       const subscription = await new PreApproval(client).create({
         requestOptions: { idempotencyKey: externalReference },
@@ -228,13 +290,18 @@ export const billingRoutes = new Elysia({ prefix: "/billing" })
           reason: "PluginsX | Creeper - Premium/Plus",
           external_reference: externalReference,
           payer_email: user.email,
-          back_url: `${base}/plans?return=subscription&returnTo=${encodeURIComponent(safeReturnTo)}`,
-          auto_recurring: { frequency: 1, frequency_type: "months", transaction_amount: price, currency_id: "BRL" },
+          back_url: returnUrl("subscription"),
+          auto_recurring: {
+            frequency: PLANS_CONFIG.plans.monthly.recurrence.frequency,
+            frequency_type: PLANS_CONFIG.plans.monthly.recurrence.frequencyType,
+            transaction_amount: price,
+            currency_id: PLANS_CONFIG.currency as "BRL",
+          },
         },
       });
       if (!subscription.id || !subscription.init_point) throw new Error("Subscription checkout missing redirect URL");
       await PlanPurchase.updateOne({ _id: purchase._id }, { $set: { mercadoPagoSubscriptionId: subscription.id } });
-      return { checkoutUrl: subscription.init_point };
+      return { checkoutUrl: subscription.init_point, purchaseReference: externalReference };
     } catch (error) {
       const details = error && typeof error === "object" ? error as Record<string, unknown> : {};
       console.error("[billing] Mercado Pago checkout creation failed", {
@@ -248,7 +315,7 @@ export const billingRoutes = new Elysia({ prefix: "/billing" })
       await PlanPurchase.updateOne({ _id: purchase._id, status: "pending" }, { $set: { status: "cancelled" } });
       return status(503, { message: "Não foi possível iniciar o checkout agora. Tente novamente." });
     }
-  }, { auth: true, body: z.object({ plan: z.enum(["monthly", "lifetime"]), returnTo: z.string().optional() }) })
+  }, { auth: true, body: checkoutBody })
   .post("/cancel", async ({ user, status, request }) => {
     if (!hasTrustedWebOrigin(request)) return status(403, { message: "Origem da solicitação não permitida." });
     if (!(await rateLimit(user.id, "cancel", 5, 60_000))) return status(429, { message: "Muitas tentativas de cancelamento. Aguarde um minuto." });
@@ -268,7 +335,7 @@ export const billingRoutes = new Elysia({ prefix: "/billing" })
     }
   }, { auth: true })
   .get("/purchase/:reference", async ({ user, params, status }) => {
-    const purchase = await PlanPurchase.findOne({ externalReference: params.reference, userId: user.id }).select({ plan: 1, status: 1, createdAt: 1 }).lean();
+    const purchase = await PlanPurchase.findOne({ externalReference: params.reference, userId: user.id }).select({ plan: 1, serverSlots: 1, status: 1, createdAt: 1 }).lean();
     if (!purchase) return status(404, { message: "Compra não encontrada." });
     return purchase;
   }, { auth: true, params: z.object({ reference: z.string().uuid() }) })
@@ -311,7 +378,7 @@ export const billingRoutes = new Elysia({ prefix: "/billing" })
         const invoicePurchase = invoice.preapproval_id
           ? await PlanPurchase.findOne({ mercadoPagoSubscriptionId: invoice.preapproval_id, plan: "monthly" })
           : null;
-        if (!invoicePurchase || Number(invoice.transaction_amount) !== invoicePurchase.amount || invoice.currency_id !== "BRL") throw new Error("Invoice does not match an internal subscription");
+        if (!invoicePurchase || Number(invoice.transaction_amount) !== invoicePurchase.amount || invoice.currency_id !== PLANS_CONFIG.currency) throw new Error("Invoice does not match an internal subscription");
         authorizedSubscriptionId = invoice.preapproval_id;
         if (!invoice.payment?.id) {
           await PaymentEvent.updateOne({ eventId }, { $set: { status: "processed" } });
@@ -329,7 +396,7 @@ export const billingRoutes = new Elysia({ prefix: "/billing" })
         ];
         if (purchaseAlternatives.length === 0) throw new Error("Missing purchase reference");
         const purchase = await PlanPurchase.findOne({ $or: purchaseAlternatives });
-        if (!purchase || Number(payment.transaction_amount) !== purchase.amount || payment.currency_id !== "BRL") throw new Error("Payment does not match an internal purchase");
+        if (!purchase || Number(payment.transaction_amount) !== purchase.amount || payment.currency_id !== PLANS_CONFIG.currency) throw new Error("Payment does not match an internal purchase");
         const paymentStatus = payment.status;
         const nextStatus = payment.status_detail === "partially_refunded" ? "refunded" : paymentStatus === "approved" ? "approved" : paymentStatus === "refunded" ? "refunded" : paymentStatus === "charged_back" ? "charged_back" : paymentStatus === "cancelled" ? "cancelled" : paymentStatus === "rejected" ? "rejected" : "pending";
         let shouldApplyMonthlyCharge = nextStatus === "approved" && purchase.plan === "monthly";
@@ -354,24 +421,52 @@ export const billingRoutes = new Elysia({ prefix: "/billing" })
           }
         }
         await PlanPurchase.updateOne({ _id: purchase._id }, { $set: { status: nextStatus, mercadoPagoPaymentId: String(payment.id) } });
-        if (purchase.plan === "lifetime") {
+        const transactionUpdate: Record<string, unknown> = {
+          userId: purchase.userId,
+          purchaseReference: purchase.externalReference,
+          providerPaymentId: String(payment.id),
+          plan: purchase.plan,
+          serverSlots: purchase.serverSlots ?? 0,
+          amount: Number(payment.transaction_amount),
+          currency: payment.currency_id,
+          status: nextStatus,
+        };
+        if (payment.date_approved || nextStatus === "approved") {
+          transactionUpdate.paidAt = new Date(payment.date_approved ?? payment.date_created ?? Date.now());
+        }
+        await BillingTransaction.updateOne(
+          { providerPaymentId: String(payment.id) },
+          { $set: transactionUpdate },
+          { upsert: true },
+        );
+        if (purchase.plan === "lifetime" || purchase.plan === "aether") {
           if (nextStatus === "approved") {
             const currentAccess = await PlanAccess.findOne({ userId: purchase.userId }).lean();
-            if (currentAccess?.plan !== "lifetime" || currentAccess.status !== "active") {
-              await PlanAccess.updateOne({ userId: purchase.userId }, { $set: { userId: purchase.userId, plan: "lifetime", status: "active", startsAt: new Date(), expiresAt: null } }, { upsert: true });
+            const hasActivePermanentPlan = (currentAccess?.plan === "lifetime" || currentAccess?.plan === "aether") && currentAccess.status === "active";
+            if (!hasActivePermanentPlan) {
+              await PlanAccess.updateOne({ userId: purchase.userId }, {
+                $set: { userId: purchase.userId, plan: purchase.plan, status: "active", startsAt: new Date(), expiresAt: null },
+                $unset: { grantSource: "", serverLimitOverride: "", serverLimitUnlimited: "" },
+              }, { upsert: true });
             }
           }
-          if (["refunded", "charged_back"].includes(nextStatus)) await PlanAccess.updateOne({ userId: purchase.userId, plan: "lifetime" }, { $set: { status: "revoked" } });
+          if (["refunded", "charged_back"].includes(nextStatus)) {
+            await PlanAccess.updateOne({ userId: purchase.userId, plan: purchase.plan, grantSource: { $ne: "owner" } }, { $set: { status: "revoked" } });
+          }
         } else if (purchase.plan === "monthly" && purchase.mercadoPagoSubscriptionId) {
           if (shouldApplyMonthlyCharge) {
-            const now = new Date();
             const existingAccess = await PlanAccess.findOne({ userId: purchase.userId });
             const access = existingAccess?.plan === "monthly" ? existingAccess : null;
             const start = new Date(payment.date_approved ?? payment.date_created ?? purchase.createdAt);
-            const paidThrough = addOneCalendarMonth(start);
+            const paidThrough = addRecurringInterval(
+              start,
+              PLANS_CONFIG.plans.monthly.recurrence.frequency,
+              PLANS_CONFIG.plans.monthly.recurrence.frequencyType,
+            );
             const expiresAt = access?.expiresAt && access.expiresAt > paidThrough ? access.expiresAt : paidThrough;
-            if (existingAccess?.plan !== "lifetime" || existingAccess.status !== "active") {
-              await PlanAccess.updateOne({ userId: purchase.userId }, { $set: { userId: purchase.userId, plan: "monthly", status: "active", startsAt: access?.startsAt ?? start, expiresAt, mercadoPagoSubscriptionId: purchase.mercadoPagoSubscriptionId, cancelAtPeriodEnd: false } }, { upsert: true });
+            const hasActivePermanentPlan = (existingAccess?.plan === "lifetime" || existingAccess?.plan === "aether") && existingAccess.status === "active";
+            if (!hasActivePermanentPlan) {
+              await PlanAccess.updateOne({ userId: purchase.userId }, { $set: { userId: purchase.userId, plan: "monthly", status: "active", startsAt: access?.startsAt ?? start, expiresAt, mercadoPagoSubscriptionId: purchase.mercadoPagoSubscriptionId, cancelAtPeriodEnd: false }, $unset: { grantSource: "" } }, { upsert: true });
             }
           } else if (nextStatus === "rejected") {
             await PlanAccess.updateOne({ userId: purchase.userId, plan: "monthly", mercadoPagoSubscriptionId: purchase.mercadoPagoSubscriptionId, expiresAt: { $lte: new Date() } }, { $set: { status: "past_due" } });
@@ -383,14 +478,15 @@ export const billingRoutes = new Elysia({ prefix: "/billing" })
       } else if (type === "subscription_preapproval") {
         const subscription = await new PreApproval(client).get({ id: resourceId });
         const purchase = subscription.external_reference ? await PlanPurchase.findOne({ externalReference: subscription.external_reference, mercadoPagoSubscriptionId: resourceId }) : null;
-        if (!purchase || purchase.plan !== "monthly" || Number(subscription.auto_recurring?.transaction_amount) !== purchase.amount || subscription.auto_recurring?.currency_id !== "BRL") throw new Error("Subscription does not match an internal purchase");
+        if (!purchase || purchase.plan !== "monthly" || Number(subscription.auto_recurring?.transaction_amount) !== purchase.amount || subscription.auto_recurring?.currency_id !== PLANS_CONFIG.currency) throw new Error("Subscription does not match an internal purchase");
         if (subscription.status === "authorized") {
           const currentAccess = await PlanAccess.findOne({ userId: purchase.userId }).lean();
-          if (currentAccess?.plan !== "lifetime" || currentAccess.status !== "active") {
-            await PlanAccess.updateOne({ userId: purchase.userId, plan: { $ne: "lifetime" } }, { $set: { userId: purchase.userId, plan: "monthly", status: "pending", mercadoPagoSubscriptionId: resourceId, cancelAtPeriodEnd: false } }, { upsert: true });
+          const hasActivePermanentPlan = (currentAccess?.plan === "lifetime" || currentAccess?.plan === "aether") && currentAccess.status === "active";
+          if (!hasActivePermanentPlan) {
+            await PlanAccess.updateOne({ userId: purchase.userId }, { $set: { userId: purchase.userId, plan: "monthly", status: "pending", mercadoPagoSubscriptionId: resourceId, cancelAtPeriodEnd: false }, $unset: { grantSource: "" } }, { upsert: true });
           }
         } else if (["cancelled", "paused"].includes(subscription.status ?? "")) {
-          const access = await PlanAccess.findOne({ userId: purchase.userId, mercadoPagoSubscriptionId: resourceId });
+          const access = await PlanAccess.findOne({ userId: purchase.userId, mercadoPagoSubscriptionId: resourceId, grantSource: { $ne: "owner" } });
           if (access) {
             access.cancelAtPeriodEnd = true;
             if (!access.expiresAt || access.expiresAt <= new Date()) access.status = "canceled";
@@ -399,9 +495,11 @@ export const billingRoutes = new Elysia({ prefix: "/billing" })
           }
           await PlanPurchase.updateOne({ _id: purchase._id }, { $set: { status: "cancelled" } });
         } else if (["pending", "authorized"].includes(subscription.status ?? "")) {
-          const access = await PlanAccess.findOne({ userId: purchase.userId, plan: "monthly" });
-          if ((!access || access.status !== "active" || !access.expiresAt || access.expiresAt <= new Date()) && (access?.plan !== "lifetime" || access.status !== "active")) {
-            await PlanAccess.updateOne({ userId: purchase.userId, plan: { $ne: "lifetime" } }, { $set: { userId: purchase.userId, plan: "monthly", status: "pending", mercadoPagoSubscriptionId: resourceId } }, { upsert: true });
+          const currentAccess = await PlanAccess.findOne({ userId: purchase.userId }).lean();
+          const monthlyAccess = currentAccess?.plan === "monthly" ? currentAccess : null;
+          const activePermanentPlan = (currentAccess?.plan === "lifetime" || currentAccess?.plan === "aether") && currentAccess.status === "active";
+          if ((!monthlyAccess || monthlyAccess.status !== "active" || !monthlyAccess.expiresAt || monthlyAccess.expiresAt <= new Date()) && !activePermanentPlan) {
+            await PlanAccess.updateOne({ userId: purchase.userId }, { $set: { userId: purchase.userId, plan: "monthly", status: "pending", mercadoPagoSubscriptionId: resourceId }, $unset: { grantSource: "" } }, { upsert: true });
           }
         }
       } else if (type === "topic_chargebacks_wh") {
@@ -414,9 +512,15 @@ export const billingRoutes = new Elysia({ prefix: "/billing" })
           ...(subscriptionId ? [{ mercadoPagoSubscriptionId: subscriptionId }] : []),
         ];
         const purchase = alternatives.length ? await PlanPurchase.findOne({ $or: alternatives }) : null;
-        if (!purchase || Number(payment.transaction_amount) !== purchase.amount || payment.currency_id !== "BRL") throw new Error("Chargeback does not match an internal purchase");
+        if (!purchase || Number(payment.transaction_amount) !== purchase.amount || payment.currency_id !== PLANS_CONFIG.currency) throw new Error("Chargeback does not match an internal purchase");
         await PlanPurchase.updateOne({ _id: purchase._id }, { $set: { status: "charged_back", mercadoPagoPaymentId: String(payment.id) } });
-        await PlanAccess.updateOne({ userId: purchase.userId, plan: { $in: ["monthly", "lifetime"] } }, { $set: { status: "revoked" } });
+        await BillingTransaction.updateOne(
+          { providerPaymentId: String(payment.id) },
+          { $set: { status: "charged_back" } },
+        );
+        if (purchase.plan === "monthly" || purchase.plan === "lifetime" || purchase.plan === "aether") {
+          await PlanAccess.updateOne({ userId: purchase.userId, plan: purchase.plan, grantSource: { $ne: "owner" } }, { $set: { status: "revoked" } });
+        }
       }
       await PaymentEvent.updateOne({ eventId }, { $set: { status: "processed" } });
       return { received: true };

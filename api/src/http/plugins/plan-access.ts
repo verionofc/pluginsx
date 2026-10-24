@@ -8,16 +8,16 @@ export function hasTrustedWebOrigin(request: Request): boolean {
 
 export async function hasPremiumAccess(userId: string): Promise<boolean> {
   const access = await PlanAccess.findOne({ userId, status: "active", $or: [
-    { plan: "lifetime" },
+    { plan: { $in: ["lifetime", "aether"] } },
     { plan: "monthly", expiresAt: { $gt: new Date() } },
   ] }).select({ _id: 1 }).lean();
   return Boolean(access);
 }
 
-export async function getPaidPlan(userId: string): Promise<"monthly" | "lifetime" | null> {
+export async function getPaidPlan(userId: string): Promise<"monthly" | "lifetime" | "aether" | null> {
   const access = await PlanAccess.findOne({ userId, status: "active", $or: [
-    { plan: "lifetime" },
+    { plan: { $in: ["lifetime", "aether"] } },
     { plan: "monthly", expiresAt: { $gt: new Date() } },
   ] }).select({ plan: 1 }).lean();
-  return access?.plan === "monthly" || access?.plan === "lifetime" ? access.plan : null;
+  return access?.plan === "monthly" || access?.plan === "lifetime" || access?.plan === "aether" ? access.plan : null;
 }

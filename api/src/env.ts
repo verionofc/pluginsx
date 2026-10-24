@@ -1,5 +1,10 @@
 import { z } from "zod";
 
+const optionalEnvCredential = z
+  .string()
+  .optional()
+  .transform((value) => value?.trim() || undefined);
+
 const envSchema = z.object({
   BETTER_AUTH_SECRET: z.string().min(32),
 
@@ -8,6 +13,8 @@ const envSchema = z.object({
 
   GITHUB_CLIENT_ID: z.string().min(1),
   GITHUB_CLIENT_SECRET: z.string().min(1),
+  DISCORD_CLIENT_ID: optionalEnvCredential,
+  DISCORD_CLIENT_SECRET: optionalEnvCredential,
 
   URL: z.string(),
   DEV_URL: z.string(),

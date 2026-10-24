@@ -15,9 +15,9 @@ Abra [http://localhost:3000](http://localhost:3000). Os principais arquivos da a
 
 Configure `NEXT_PUBLIC_API_URL` com a URL pública da API PluginsX. O site carrega o catálogo de plugins em `/plugins` e as versões pelo índice individual de cada plugin, com cache de uma hora. A rota `/plugins/{slug}` usa conteúdo detalhado do SpawnerX e uma página genérica de downloads para outros plugins PaperMC publicados no catálogo.
 
-A página `/account` permite entrar com GitHub, consultar a sessão e sair da conta. Na página inicial, a key Premium/Plus é gerada para a conta autenticada e pode ser recuperada depois sem criar uma segunda key. As chamadas de autenticação, sessão e licença passam por rewrites do Next.js no mesmo domínio do site; o catálogo continua usando `NEXT_PUBLIC_API_URL` diretamente.
+A página `/account` permite entrar com GitHub ou Discord, consultar a sessão e sair da conta. Na página inicial, a key Premium/Plus é gerada para a conta autenticada e pode ser recuperada depois sem criar uma segunda key. As chamadas de autenticação, sessão e licença passam por rewrites do Next.js no mesmo domínio do site; o catálogo continua usando `NEXT_PUBLIC_API_URL` diretamente.
 
-Cadastre `${URL}/auth/callback/github` como callback OAuth do GitHub, usando a mesma origem pública do site definida em `URL` na API. Em produção, `https://pluginsx.vercel.app/auth/callback/github` é encaminhado pelo site à API em `https://api-pluginsx.vercel.app`.
+Cadastre os callbacks OAuth na origem pública do site configurada em `URL` e `DEV_URL` na API. Em produção, use `https://pluginsx.vercel.app/auth/callback/github` e `https://pluginsx.vercel.app/auth/callback/discord`; localmente, use `http://localhost:3000/auth/callback/github` e `http://localhost:3000/auth/callback/discord`. A porta `3333` é da API e não deve ser usada como callback: o site encaminha `/auth/*` à API por rewrite.
 
 ## Verificações e build
 

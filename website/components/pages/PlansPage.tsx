@@ -1,21 +1,24 @@
 "use client";
 
-import Link from "next/link";
 import Image from "next/image";
-import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   TbBlocks,
   TbCheck,
   TbCopy,
-  TbLoader2,
+  TbMinus,
   TbPick,
+  TbPlus,
+  TbShoppingCart,
 } from "react-icons/tb";
-import { authClient } from "@/lib/auth-client";
+import { useCart } from "@/components/cart/CartProvider";
 import { SiteLoadingScreen } from "@/components/ui/SiteLoadingScreen";
-import { useLoadingDelay } from "@/hooks/useLoadingDelay";
 import { useHydrated } from "@/hooks/useHydrated";
+import { useLoadingDelay } from "@/hooks/useLoadingDelay";
+import { authClient } from "@/lib/auth-client";
 
-type PlanId = "free" | "monthly" | "lifetime";
+type PlanId = "free" | "monthly" | "lifetime" | "aether";
 
 type BillingState = {
   access: null | {
@@ -25,15 +28,17 @@ type BillingState = {
     trialUsedAt?: string;
     trialExpiresAt?: string;
     cancelAtPeriodEnd?: boolean;
+    canCancelSubscription?: boolean;
   };
   temporaryLicense?: null | { code: string; expiresAt: string };
   lastPurchase: null | { plan: string; status: string; createdAt: string };
+  additionalServerSlots?: number;
 };
 type PlanCatalog = {
   trialEnabled: boolean;
-  plans: { id: string; formattedPrice: string }[];
+  plans: { id: string; amount: number; formattedPrice: string }[];
+  serverSlot?: { amount: number; formattedPrice: string; maxPerPurchase: number };
 };
-
 const temporaryTrialStorageKey = (accountId: string) =>
   `pluginsx:temporary-trial:${accountId}`;
 
@@ -66,6 +71,12 @@ const perks = {
     "Até 5 servidores por licença",
     "Sem renovação mensal",
   ],
+  aether: [
+    "Acesso vitalício Premium/Plus",
+    "Pagamento único",
+    "Até 250 servidores por licença",
+    "Vagas extras disponíveis no carrinho",
+  ],
 };
 
 const planDetails: Record<PlanId, {
@@ -96,14 +107,24 @@ const planDetails: Record<PlanId, {
     image: "/images/Chave%20Voxel%20do%20Portal%20Nether.png",
     imageAlt: "Chave voxel do Portal Nether representando o plano Ender Dragon",
   },
+  aether: {
+    name: "Aether",
+    realm: "CÉU · AETHER",
+    description: "Uma compra vitalícia para redes grandes, com até 250 servidores incluídos.",
+    image: "/images/Chave%20Voxel%20do%20Portal%20Nether.png",
+    imageAlt: "Chave voxel do Portal Nether representando o plano Aether",
+  },
 };
 
 export function PlansPage() {
   const { data: session, isPending: sessionPending } = authClient.useSession();
   const hasHydrated = useHydrated();
   const isSessionReady = hasHydrated && !sessionPending;
+  const { cart, ready: cartReady, itemCount: cartItemCount, setPlan, setServerSlots, settlePurchase } = useCart();
   const [state, setState] = useState<BillingState>();
   const [catalog, setCatalog] = useState<PlanCatalog>();
+  const [slotQuantity, setSlotQuantity] = useState(1);
+  const handledPurchaseRef = useRef<string | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<PlanId>("monthly");
   const [loading, setLoading] = useState(true);
   const [initialStateLoaded, setInitialStateLoaded] = useState(false);
@@ -123,6 +144,7 @@ export function PlansPage() {
   const [temporaryLicenseCopied, setTemporaryLicenseCopied] = useState(false);
   const [trialSecondsRemaining, setTrialSecondsRemaining] = useState<number | null>(null);
   const temporaryLicenseScope = session?.user.id ?? "guest";
+  const sessionUserId = session?.user.id;
   const temporaryLicenseReady =
     isSessionReady && temporaryLicenseLoadedFor === temporaryLicenseScope;
   const currentTemporaryLicense =
@@ -183,7 +205,7 @@ export function PlansPage() {
 
   useEffect(() => {
     const currentPlan = state?.access?.plan;
-    if (currentPlan === "monthly" || currentPlan === "lifetime") {
+    if (currentPlan === "monthly" || currentPlan === "lifetime" || currentPlan === "aether") {
       setSelectedPlan(currentPlan);
     }
   }, [state?.access?.plan]);
@@ -216,6 +238,55 @@ export function PlansPage() {
     setReturnStatus(search.get("return"));
     setReturnTo(search.get("returnTo"));
   }, []);
+
+  useEffect(() => {
+    if (!sessionUserId || !cartReady || typeof window === "undefined") return;
+    const reference = new URLSearchParams(window.location.search).get("purchase");
+    if (!reference || !/^[0-9a-f-]{36}$/i.test(reference) || handledPurchaseRef.current === reference) return;
+    handledPurchaseRef.current = reference;
+    let cancelled = false;
+
+    async function checkPurchase() {
+      for (let attempt = 0; attempt < 9 && !cancelled; attempt += 1) {
+        try {
+          const response = await fetch(`/billing/purchase/${reference}`, {
+            credentials: "include",
+            cache: "no-store",
+          });
+          if (response.ok) {
+            const purchase = await response.json() as {
+              plan: string;
+              serverSlots?: number;
+              status: string;
+            };
+            if (purchase.status === "approved") {
+              const purchasedSlots = Math.max(0, Number(purchase.serverSlots ?? 0));
+              settlePurchase(purchase.plan, purchasedSlots);
+              setMessage(purchase.plan === "server_slots"
+                ? `${purchasedSlots} ${purchasedSlots === 1 ? "vaga extra foi confirmada" : "vagas extras foram confirmadas"} e já estão disponíveis na sua licença.`
+                : purchase.plan === "monthly"
+                  ? "Primeira cobrança confirmada. Seu acesso Creeper está ativo."
+                  : `Pagamento confirmado. Seu ${purchase.plan === "aether" ? "Aether" : "Ender Dragon"} está ativo${purchasedSlots > 0 ? ` com ${purchasedSlots} ${purchasedSlots === 1 ? "vaga extra" : "vagas extras"}` : ""}.`);
+              setReturnStatus("success");
+              await refresh();
+              return;
+            }
+            if (["rejected", "cancelled", "refunded", "charged_back"].includes(purchase.status)) {
+              setMessage("A compra não foi aprovada. Os itens continuam no carrinho para você tentar novamente.");
+              return;
+            }
+          }
+        } catch {
+          // Retry while the payment notification reaches the API.
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 2_000));
+      }
+      if (!cancelled) setMessage("Pagamento ainda em processamento. Seus itens continuam no carrinho e a página atualizará o acesso após a confirmação.");
+    }
+
+    void checkPurchase();
+    return () => { cancelled = true; };
+  }, [sessionUserId, cartReady, refresh, settlePurchase]);
 
   useEffect(() => {
     if (!isSessionReady) return;
@@ -288,7 +359,7 @@ export function PlansPage() {
       window.clearInterval(interval);
       window.clearTimeout(timeout);
     };
-  }, [currentTemporaryLicense?.accountId, currentTemporaryLicense?.expiresAt]);
+  }, [currentTemporaryLicense]);
 
   async function startTrial() {
     if (!session) {
@@ -351,7 +422,7 @@ export function PlansPage() {
     }
   }
 
-  async function checkout(plan: "monthly" | "lifetime") {
+  async function checkout(plan: "monthly") {
     if (!session) {
       window.location.assign(
         `/account?returnTo=${encodeURIComponent("/plans")}`,
@@ -368,8 +439,7 @@ export function PlansPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           plan,
-          returnTo:
-            new URLSearchParams(window.location.search).get("returnTo") ?? "/",
+          returnTo: "/plans",
         }),
       });
       const result = await response.json();
@@ -428,7 +498,7 @@ export function PlansPage() {
   const activePaid = Boolean(
     access &&
       access.status === "active" &&
-      (access.plan === "lifetime" ||
+      (access.plan === "lifetime" || access.plan === "aether" ||
         (access.expiresAt && new Date(access.expiresAt) > new Date())),
   );
   const planLabel =
@@ -436,12 +506,14 @@ export function PlansPage() {
       ? "Creeper"
       : access?.plan === "lifetime"
         ? "Ender Dragon"
+        : access?.plan === "aether"
+          ? "Aether"
         : access?.plan === "free" && access.status === "trial"
           ? "Trial Key"
-        : "Acesso básico";
+          : "Acesso básico";
   const planChoices: PlanId[] = catalog?.trialEnabled
-    ? ["free", "monthly", "lifetime"]
-    : ["monthly", "lifetime"];
+    ? ["free", "monthly", "lifetime", "aether"]
+    : ["monthly", "lifetime", "aether"];
   const visibleSelectedPlan = planChoices.includes(selectedPlan)
     ? selectedPlan
     : "monthly";
@@ -534,8 +606,32 @@ export function PlansPage() {
     !isSessionReady ||
     !temporaryLicenseReady ||
     !initialStateLoaded ||
-    catalogLoading;
+    catalogLoading ||
+    !cartReady;
   const showLoading = useLoadingDelay(isPageLoading);
+  const slotPrice = catalog?.serverSlot?.amount ?? 4.9;
+  const slotPriceLabel = catalog?.serverSlot?.formattedPrice ?? "R$ 4,90";
+  const cartMaximum = catalog?.serverSlot?.maxPerPurchase ?? 99;
+  const canBuyExtraSlots = activePaid || Boolean(cart.plan);
+
+  function addOneTimePlanToCart(plan: "lifetime" | "aether") {
+    if (activePaid || subscriptionBlocked) return;
+    setPlan(plan);
+    setMessage(`${plan === "aether" ? "Aether" : "Ender Dragon"} adicionado ao carrinho.`);
+    setError("");
+  }
+
+  function addSlotsToCart() {
+    if (!canBuyExtraSlots) return;
+    const nextCount = Math.min(cartMaximum, cart.serverSlots + slotQuantity);
+    if (nextCount === cart.serverSlots) {
+      setMessage(`O carrinho já atingiu o limite de ${cartMaximum} vagas por compra.`);
+      return;
+    }
+    setServerSlots(nextCount);
+    setMessage(`${nextCount - cart.serverSlots} ${nextCount - cart.serverSlots === 1 ? "vaga extra adicionada" : "vagas extras adicionadas"} ao carrinho.`);
+    setError("");
+  }
 
   return (
     <>
@@ -561,14 +657,25 @@ export function PlansPage() {
               Escolha seu acesso
             </h1>
           </div>
-          <span className="ml-auto hidden border border-[#718667]/35 bg-[#101811] px-3 py-2 text-[10px] font-bold uppercase tracking-[0.12em] text-[#b9d59b] sm:block">
-            {catalog?.trialEnabled
-              ? "Trial: 1 · Mensal: 3 · Lifetime: 5 servidores"
-              : "Mensal: 3 servidores · Lifetime: 5"}
-          </span>
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            <span className="hidden border border-[#718667]/35 bg-[#101811] px-3 py-2 text-[10px] font-bold uppercase tracking-[0.12em] text-[#b9d59b] xl:block">
+              {catalog?.trialEnabled
+                ? "Trial: 1 · Creeper: 3 · Ender: 5 · Aether: 250 servidores"
+                : "Creeper: 3 · Ender: 5 · Aether: 250 servidores"}
+            </span>
+            <Link
+              href="/cart"
+              aria-label={`Abrir carrinho, ${cartItemCount} ${cartItemCount === 1 ? "item" : "itens"}`}
+              className="font-minecraft-text inline-flex min-h-11 items-center gap-2 border-2 border-[#718667]/45 bg-[#101811] px-3 text-xs font-bold text-[#e5f2d8] transition hover:border-[#a6cf74]/70 hover:bg-[#19251b] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c9e9a8]"
+            >
+              <TbShoppingCart aria-hidden="true" className="size-4 text-[#b9d59b]" />
+              Carrinho
+              <span className="grid size-5 place-items-center bg-[#6b9f45] px-1 text-[10px] text-white">{cartItemCount}</span>
+            </Link>
+          </div>
         </div>
         <p className="mt-4 max-w-3xl text-sm leading-6 text-white/65 sm:ml-16">
-          {catalog?.trialEnabled && "O Trial libera 1 servidor por 12 horas. "}O Creeper renova mensalmente e permite 3 servidores. O Ender Dragon é pagamento único e permite 5. Todos liberam os recursos Premium do PluginsX.
+          {catalog?.trialEnabled && "O Trial libera 1 servidor por 12 horas. "}O Creeper custa R$ 11,90 por mês e permite 3 servidores. O Ender Dragon custa R$ 59,90 uma vez e permite 5. O Aether custa R$ 699,90 uma vez e inclui 250 servidores.
         </p>
         <div aria-hidden="true" className="mt-5 grid h-2 grid-cols-8 overflow-hidden">
           <span className="bg-[#709c4b]" />
@@ -601,9 +708,7 @@ export function PlansPage() {
               </p>
             </div>
           </div>
-          {access?.plan === "monthly" &&
-            access.status === "active" &&
-            !access.cancelAtPeriodEnd && (
+          {access?.canCancelSubscription && (
               <button
                 type="button"
                 onClick={() => void cancelRenewal()}
@@ -617,8 +722,8 @@ export function PlansPage() {
       )}
 
       {returnStatus && (
-        <div
-          role="status"
+        <output
+          aria-live="polite"
           className="mx-auto mb-4 block w-full max-w-6xl border-l-4 border-[#e3bd59] bg-[#211b0e] px-4 py-3 text-sm leading-6 text-amber-100"
         >
           {returnStatus === "success"
@@ -628,15 +733,15 @@ export function PlansPage() {
               : returnStatus === "failure"
                 ? "O pagamento não foi concluído. Confira o estado consultado no servidor e tente novamente."
                 : "Autorização da assinatura recebida. A primeira cobrança precisa ser confirmada para liberar o acesso."}
-        </div>
+        </output>
       )}
       {message && (
-        <div
-          role="status"
+        <output
+          aria-live="polite"
           className="mx-auto mb-4 block w-full max-w-6xl border-l-4 border-[#8bc34a] bg-[#101a12] px-4 py-3 text-sm leading-6 text-[#d9f2bd]"
         >
           {message}
-        </div>
+        </output>
       )}
       {error && (
         <div
@@ -648,8 +753,8 @@ export function PlansPage() {
       )}
 
       {catalog?.trialEnabled && trialAlreadyUsed && !currentTemporaryLicense && (
-        <p
-          role="status"
+        <output
+          aria-live="polite"
           className="mx-auto mb-5 max-w-6xl border-l-4 border-[#e3bd59] bg-[#211b0e] px-4 py-3 text-sm leading-6 text-amber-100"
         >
           {trialWindowExpired
@@ -657,7 +762,7 @@ export function PlansPage() {
             : access?.trialExpiresAt
               ? "O Trial já foi usado. A mesma key pode ser consultada novamente nesta página até completar 12 horas; depois, deixa de ser exibida."
               : "Este Trial foi emitido antes da recuperação automática da key. Ela não está disponível para consulta e não pode ser gerada novamente."}
-        </p>
+        </output>
       )}
 
       {currentTemporaryLicense && !temporaryLicenseExpired && (
@@ -748,10 +853,9 @@ export function PlansPage() {
           </div>
 
           <div className="p-3 sm:p-5">
-            <div
-              role="group"
+            <fieldset
               aria-label="Escolha uma licença"
-              className={"grid gap-2 sm:gap-3 " + (catalog?.trialEnabled ? "grid-cols-3" : "grid-cols-2")}
+              className={`grid gap-2 sm:gap-3 ${catalog?.trialEnabled ? "grid-cols-2 md:grid-cols-4" : "grid-cols-3"}`}
             >
               {planChoices.map((plan, index) => {
                 const details = planDetails[plan];
@@ -765,7 +869,7 @@ export function PlansPage() {
                     key={plan}
                     type="button"
                     aria-pressed={selected}
-                    aria-label={"Selecionar " + details.name + ", " + price}
+                    aria-label={`Selecionar ${details.name}, ${price}`}
                     onClick={() => setSelectedPlan(plan)}
                     className={
                       "group relative flex min-h-36 flex-col items-center justify-center border-2 px-2 pb-3 pt-5 text-center transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e3bd59] sm:min-h-44 sm:px-4 " +
@@ -795,13 +899,13 @@ export function PlansPage() {
                   </button>
                 );
               })}
-            </div>
+            </fieldset>
 
             <div className="mt-3 grid overflow-hidden border border-[#718667]/30 bg-[#0b110e] lg:grid-cols-[0.92fr_1.08fr]">
               <div
                 className={
                   "relative flex min-h-64 flex-col justify-between overflow-hidden border-b border-[#718667]/30 bg-[#0c130f] p-4 sm:min-h-80 sm:p-5 lg:border-b-0 lg:border-r " +
-                  (visibleSelectedPlan === "lifetime" ? "lg:border-r-[#8b5cf6]/40" : "")
+                  (visibleSelectedPlan === "lifetime" ? "lg:border-r-[#8b5cf6]/40" : visibleSelectedPlan === "aether" ? "lg:border-r-[#a6cf74]/40" : "")
                 }
               >
                 <div
@@ -873,7 +977,7 @@ export function PlansPage() {
                     <li key={perk} className="flex items-start gap-2.5">
                       <TbCheck
                         aria-hidden="true"
-                        className={"mt-0.5 size-4 shrink-0 " + (visibleSelectedPlan === "lifetime" ? "text-[#c8aaff]" : "text-[#a6cf74]")}
+                        className={`mt-0.5 size-4 shrink-0 ${visibleSelectedPlan === "lifetime" ? "text-[#c8aaff]" : "text-[#a6cf74]"}`}
                       />
                       <span>{perk}</span>
                     </li>
@@ -893,7 +997,7 @@ export function PlansPage() {
                         session
                           ? void startTrial()
                           : window.location.assign(
-                              "/account?returnTo=" + encodeURIComponent("/plans"),
+                              `/account?returnTo=${encodeURIComponent("/plans")}`,
                             )
                       }
                       disabled={
@@ -911,33 +1015,68 @@ export function PlansPage() {
                   ) : (
                     <button
                       type="button"
-                      onClick={() => void checkout(visibleSelectedPlan)}
+                      onClick={() => visibleSelectedPlan === "monthly" ? void checkout("monthly") : addOneTimePlanToCart(visibleSelectedPlan)}
                       disabled={
                         !catalog ||
                         Boolean(activePaid) ||
                         Boolean(subscriptionBlocked) ||
-                        busy === visibleSelectedPlan
+                        busy === visibleSelectedPlan ||
+                        (visibleSelectedPlan !== "monthly" && cart.plan === visibleSelectedPlan)
                       }
                       className={
                         "font-minecraft-text inline-flex min-h-12 w-full items-center justify-center gap-2 border-b-4 px-4 text-sm font-bold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:border-[#344035] disabled:bg-[#343d34] disabled:text-[#8f9b89] " +
                         (visibleSelectedPlan === "lifetime"
                           ? "border-[#581c87] bg-[#6d28d9] text-white hover:bg-[#7c3aed]"
-                          : "border-[#345d2f] bg-[#5e9b43] text-[#f7ffe9] hover:bg-[#6eaa4d]")
+                          : visibleSelectedPlan === "aether"
+                            ? "border-[#345d2f] bg-[#5e9b43] text-[#f7ffe9] hover:bg-[#6eaa4d]"
+                            : "border-[#345d2f] bg-[#5e9b43] text-[#f7ffe9] hover:bg-[#6eaa4d]")
                       }
                     >
-                      <TbPick aria-hidden="true" className="size-5" />
-                      {checkoutActionLabel}
+                      {visibleSelectedPlan === "monthly" ? <TbPick aria-hidden="true" className="size-5" /> : <TbShoppingCart aria-hidden="true" className="size-5" />}
+                      {visibleSelectedPlan === "monthly"
+                        ? checkoutActionLabel
+                        : cart.plan === visibleSelectedPlan
+                          ? `${selectedProduct.name} no carrinho`
+                          : "Adicionar ao carrinho"}
                     </button>
                   )}
                   <p className="mt-2 text-center text-[10px] leading-5 text-white/40">
                     {visibleSelectedPlan === "free"
                       ? "1 servidor · key temporária sem vínculo à conta, válida por 12 horas."
-                      : `${visibleSelectedPlan === "lifetime" ? 5 : 3} servidores por licença · gerencie as autorizações pela sua conta.`}
+                      : `${visibleSelectedPlan === "aether" ? 250 : visibleSelectedPlan === "lifetime" ? 5 : 3} servidores por licença · gerencie as autorizações pela sua conta.`}
                   </p>
                 </div>
               </div>
             </div>
           </div>
+        </div>
+      </section>
+
+      <section aria-labelledby="extra-slots-title" className="mx-auto mt-6 grid max-w-6xl overflow-hidden border-2 border-[#718667]/40 bg-[#111a16] shadow-[0_6px_0_#070b08] md:grid-cols-[minmax(0,1fr)_19rem]">
+        <div className="p-4 sm:p-6">
+          <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-[#91b56b]">Expansão de capacidade</p>
+          <h2 id="extra-slots-title" className="font-minecraft-text mt-2 text-xl font-bold text-white sm:text-2xl">Precisa de mais servidores?</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-white/60">Ender Dragon inclui 5 servidores e Aether inclui 250. Se precisar ampliar qualquer plano pago, adicione vagas extras de uma em uma pelo carrinho.</p>
+          <p className="mt-3 text-xs font-semibold text-[#c9e9a8]">Cada vaga extra: {slotPriceLabel} · compra única</p>
+          {state?.additionalServerSlots ? (
+            <p className="mt-2 text-[10px] text-white/45">Sua conta já tem {state.additionalServerSlots} {state.additionalServerSlots === 1 ? "vaga extra aprovada" : "vagas extras aprovadas"}.</p>
+          ) : null}
+        </div>
+        <div className="flex flex-col justify-center gap-3 border-t border-[#718667]/25 bg-[#0c130f] p-4 sm:p-5 md:border-l md:border-t-0">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-[10px] font-bold uppercase tracking-[0.13em] text-white/45">Quantidade</span>
+            <div className="flex items-center gap-2">
+              <button type="button" aria-label="Diminuir quantidade de vagas" disabled={slotQuantity <= 1} onClick={() => setSlotQuantity((quantity) => Math.max(1, quantity - 1))} className="grid size-9 place-items-center border border-white/15 text-white/70 disabled:opacity-30 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"><TbMinus aria-hidden="true" className="size-4" /></button>
+              <span aria-live="polite" className="min-w-8 text-center font-minecraft-text text-base font-bold text-white">{slotQuantity}</span>
+              <button type="button" aria-label="Aumentar quantidade de vagas" disabled={slotQuantity >= cartMaximum} onClick={() => setSlotQuantity((quantity) => Math.min(cartMaximum, quantity + 1))} className="grid size-9 place-items-center border border-[#a6cf74]/35 text-[#c9e9a8] disabled:opacity-30 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"><TbPlus aria-hidden="true" className="size-4" /></button>
+            </div>
+          </div>
+          <p className="text-right text-[10px] text-white/40">Subtotal: {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(slotQuantity * slotPrice)}</p>
+          <button type="button" onClick={addSlotsToCart} disabled={!canBuyExtraSlots || slotQuantity > cartMaximum - cart.serverSlots} className="font-minecraft-text inline-flex min-h-11 items-center justify-center gap-2 border-b-4 border-[#345d2f] bg-[#5e9b43] px-3 text-xs font-bold text-[#f7ffe9] transition hover:bg-[#6eaa4d] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:border-[#344035] disabled:bg-[#343d34] disabled:text-[#8f9b89]">
+            <TbShoppingCart aria-hidden="true" className="size-4" />
+            Adicionar ao carrinho
+          </button>
+          <p className="text-center text-[10px] leading-4 text-white/40">{canBuyExtraSlots ? `Até ${cartMaximum} vagas em cada compra.` : "Adicione Ender Dragon ou Aether ao carrinho, ou ative um plano pago, para liberar vagas extras."}</p>
         </div>
       </section>
 
@@ -969,7 +1108,7 @@ export function PlansPage() {
           </article>
           <article className="p-4 sm:p-5">
             <h3 className="text-xs font-bold uppercase tracking-[0.12em] text-[#c9e9a8]">Vagas de servidor</h3>
-            <p className="mt-2 text-xs leading-5 text-white/60">Trial: 1 servidor · Creeper: 3 · Ender Dragon: 5. Remova um servidor na sua conta para liberar a vaga e usar outra instalação.</p>
+            <p className="mt-2 text-xs leading-5 text-white/60">Trial: 1 servidor · Creeper: 3 · Ender Dragon: 5 · Aether: 250. Planos pagos podem receber vagas extras por R$ 4,90 cada. Remova um servidor na sua conta para liberar a vaga e usar outra instalação.</p>
           </article>
         </div>
       </section>

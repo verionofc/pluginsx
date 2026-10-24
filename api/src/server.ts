@@ -3,18 +3,34 @@ import { cors } from "@elysiajs/cors";
 import { Elysia } from "elysia";
 import { node } from "@elysiajs/node";
 import z from "zod";
+import mongoose from "mongoose";
 
 import { env } from "./env.js";
 import { Package } from "./config/package.js";
+import { OWNER_ROLE, OWNER_USER_IDS } from "./config/roles.js";
 
 import { indexRoutes } from "./http/routes/index.js";
 import { aboutRoutes } from "./http/routes/about.js";
 
 import { logger } from "./utils/logger.js";
-import { connectDatabase } from "./database/connect.js";
+import { connectDatabase, getDb } from "./database/connect.js";
 import { pluginRoutes } from "./http/routes/plugins.js";
 
 await connectDatabase();
+
+// Keep the configured account's Better Auth role aligned with the owner seed.
+for (const ownerId of OWNER_USER_IDS) {
+  if (!mongoose.isValidObjectId(ownerId)) {
+    throw new Error(`Configured owner account ID is not a Mongo ObjectId: ${ownerId}`);
+  }
+  const ownerResult = await getDb().collection("user").updateOne(
+    { _id: new mongoose.Types.ObjectId(ownerId) },
+    { $set: { role: OWNER_ROLE } },
+  );
+  if (ownerResult.matchedCount === 0) {
+    logger(`Better Auth owner seed was not found for account ${ownerId}.`);
+  }
+}
 
 // Better Auth uses the already-open Mongoose MongoDB connection.
 const [
@@ -26,9 +42,12 @@ const [
   { PlanAccess },
   { PlanPurchase },
   { PaymentEvent },
+  { BillingTransaction },
+  { AdminAuditLog },
   { BillingRateLimit },
   { licenseServerRoutes },
   { billingRoutes },
+  { panelRoutes },
 ] = await Promise.all([
   import("./http/plugins/better-auth.js"),
   import("./http/routes/user.js"),
@@ -38,9 +57,12 @@ const [
   import("./database/models/PlanAccess.js"),
   import("./database/models/PlanPurchase.js"),
   import("./database/models/PaymentEvent.js"),
+  import("./database/models/BillingTransaction.js"),
+  import("./database/models/AdminAuditLog.js"),
   import("./database/models/BillingRateLimit.js"),
   import("./http/routes/license-servers.js"),
   import("./http/routes/billing.js"),
+  import("./http/routes/panel.js"),
 ]);
 
 // Create the unique owner index before accepting premium key requests.
@@ -49,7 +71,41 @@ await LicenseServer.init();
 await PlanAccess.init();
 await PlanPurchase.init();
 await PaymentEvent.init();
+await BillingTransaction.init();
+await AdminAuditLog.init();
 await BillingRateLimit.init();
+
+// Seed one latest payment per legacy purchase into the ledger. Recurring
+// payments received after this deployment are recorded individually by the webhook.
+const legacyPurchases = await PlanPurchase.find({ mercadoPagoPaymentId: { $exists: true, $ne: "" } })
+  .select({ userId: 1, externalReference: 1, mercadoPagoPaymentId: 1, plan: 1, serverSlots: 1, amount: 1, currency: 1, status: 1, updatedAt: 1 })
+  .lean();
+const legacyPaymentUpserts = legacyPurchases.flatMap((purchase) =>
+  purchase.mercadoPagoPaymentId
+    ? [{
+        updateOne: {
+          filter: { providerPaymentId: purchase.mercadoPagoPaymentId },
+          update: {
+            $setOnInsert: {
+              userId: purchase.userId,
+              purchaseReference: purchase.externalReference,
+              providerPaymentId: purchase.mercadoPagoPaymentId,
+              plan: purchase.plan,
+              serverSlots: purchase.serverSlots ?? 0,
+              amount: purchase.amount,
+              currency: purchase.currency,
+              status: purchase.status,
+              paidAt: purchase.updatedAt,
+            },
+          },
+          upsert: true,
+        },
+      }]
+    : [],
+);
+if (legacyPaymentUpserts.length) {
+  await BillingTransaction.bulkWrite(legacyPaymentUpserts, { ordered: false });
+}
 
 // Normalize configured site URLs so a trailing slash does not prevent an
 // otherwise valid browser Origin from matching the CORS allowlist.
@@ -89,6 +145,10 @@ const app = new Elysia({ name: "PluginsX API", adapter: node() })
             description: "Authenticated user profile",
           },
           {
+            name: "Panel",
+            description: "Painel de vendas e gerenciamento de acesso, exclusivo para owners.",
+          },
+          {
             name: "License",
             description: "License related routes",
           },
@@ -110,6 +170,7 @@ const app = new Elysia({ name: "PluginsX API", adapter: node() })
   .use(licenseRoutes)
   .use(licenseServerRoutes)
   .use(billingRoutes)
+  .use(panelRoutes)
   .use(pluginRoutes)
 
   .listen(

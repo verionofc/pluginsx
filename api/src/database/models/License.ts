@@ -10,7 +10,7 @@ export interface LicenseInterface {
     valid: boolean;
   };
   serverSlots?: number;
-  sourcePlan?: "trial" | "monthly" | "lifetime";
+  sourcePlan?: "trial" | "monthly" | "lifetime" | "aether";
   expiresAt?: Date;
   createdAt?: Date;
   updatedAt?: Date;
@@ -28,10 +28,10 @@ const LicenseSchema = new Schema<LicenseInterface>({
     },
     valid: { type: Boolean, default: true },
   },
-  // Lifetime licenses can reserve five servers; the API enforces the
-  // per-plan limit when creating each reservation.
-  serverSlots: { type: Number, default: 0, min: 0, max: 5 },
-  sourcePlan: { type: String, enum: ["trial", "monthly", "lifetime"] },
+  // This tracks active and pending reservations; the route enforces the
+  // account's plan capacity, including purchased additional slots.
+  serverSlots: { type: Number, default: 0, min: 0 },
+  sourcePlan: { type: String, enum: ["trial", "monthly", "lifetime", "aether"] },
   expiresAt: { type: Date },
 }, { timestamps: true });
 

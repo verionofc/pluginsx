@@ -20,6 +20,30 @@ export const authSessionPlugin = new Elysia({ name: "auth-session" }).macro({
       };
     },
   },
+  owner: {
+    async resolve({ request: { headers }, status }) {
+      const session = await auth.api.getSession({ headers });
+
+      if (!session) {
+        return status(401, {
+          code: "AUTH_REQUIRED",
+          message: "Entre na sua conta para acessar o painel.",
+        });
+      }
+
+      if (session.user.role !== "owner") {
+        return status(403, {
+          code: "OWNER_REQUIRED",
+          message: "Você não tem permissão para acessar o painel.",
+        });
+      }
+
+      return {
+        user: session.user,
+        session: session.session,
+      };
+    },
+  },
 });
 
 export const betterAuthPlugin = new Elysia({ name: "better-auth" })

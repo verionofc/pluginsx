@@ -35,32 +35,46 @@ o JAR como anexo e informa a versão selecionada nos cabeçalhos
 
 ## Login social
 
-A autenticação aceita somente OAuth por GitHub; login/cadastro por e-mail e
-senha fica desativado. Configure `GITHUB_CLIENT_ID` e `GITHUB_CLIENT_SECRET`
-junto com `BETTER_AUTH_SECRET` (mínimo de 32 caracteres). O Better Auth usa
-`URL` como origem pública em produção e `DEV_URL` em desenvolvimento. O site
-encaminha `/auth/*` para esta API, mantendo os cookies de autenticação na
+A autenticação aceita OAuth por GitHub e Discord; login/cadastro por e-mail e
+senha fica desativado. GitHub é obrigatório. Discord só fica disponível quando
+`DISCORD_CLIENT_ID` e `DISCORD_CLIENT_SECRET` estão definidos juntos. O Better
+Auth usa `URL` como origem pública em produção e `DEV_URL` em desenvolvimento.
+O site encaminha `/auth/*` para esta API, mantendo os cookies de autenticação na
 origem do site. `URL` e `DEV_URL` também são as origens web aceitas.
 
-Cadastre estes callbacks nas aplicações OAuth dos provedores:
+**O callback usa a origem do site, não a porta da API.** Localmente, o site
+roda em `http://localhost:3000` e encaminha `/auth/*` para a API em
+`http://localhost:3333`. Cadastre
+`http://localhost:3000/auth/callback/discord` no Discord; a porta `3333` não é
+o endereço de callback do navegador.
+
+Configure os callbacks nas aplicações OAuth:
 
 ```text
 ${URL}/auth/callback/github
+${DEV_URL}/auth/callback/github
+${URL}/auth/callback/discord
+${DEV_URL}/auth/callback/discord
 ```
+
+O status público dos provedores, sem expor credenciais, fica disponível em
+`GET /about/`. Contas Discord que não fornecem e-mail recebem um endereço
+placeholder determinístico baseado no ID Discord, apenas para cumprir o campo
+obrigatório do Better Auth; esse endereço não é uma caixa de e-mail válida.
 
 O início do fluxo é feito pelo endpoint social do Better Auth, com o cookie de
 sessão persistido no MongoDB:
 
 ```text
 POST /auth/sign-in/social
-{ "provider": "github", "callbackURL": "https://pluginsx.vercel.app" }
+{ "provider": "github" | "discord", "callbackURL": "https://pluginsx.vercel.app" }
 
 GET  /auth/get-session
 POST /auth/sign-out
 GET  /me
 ```
 
-O `provider` deve ser `github`. Clientes web em outra origem
+O `provider` deve ser `github` ou `discord`. Clientes web em outra origem
 precisam enviar cookies (`fetch` com `credentials: "include"`); `/me` retorna o
 usuário autenticado ou `401` quando não há sessão válida.
 
@@ -86,9 +100,16 @@ continua disponível para clientes que só precisam saber se a chave é válida.
 
 O site expõe `/plans`; os endpoints `/billing/*` são autenticados pelo mesmo
 Better Auth e persistem acesso, compras e notificações no MongoDB/Mongoose.
-Os preços do catálogo e do checkout são definidos somente na API: R$ 12,53 por
-mês e R$ 63,04 no Lifetime. O endpoint de checkout recebe apenas o identificador
-do plano; valores enviados pelo navegador não são aceitos como autoridade.
+O arquivo [`plans.json`](plans.json) é a fonte única para moeda,
+preços, nomes, recorrência, duração do Trial, limites de servidores e preço e
+quantidade máxima das vagas extras. `/billing/catalog`, a criação de checkout e
+a validação do limite de licenças leem essa configuração; altere o JSON e
+reinicie a API para aplicar os valores novos. O checkout sempre calcula o total
+no servidor, sem confiar em valores enviados pelo navegador. Novos preços se
+aplicam a novos checkouts; assinaturas existentes mantêm o valor acordado no
+Mercado Pago. Textos promocionais estáticos do site não fazem parte deste
+catálogo e exigem atualização própria no front-end quando os preços forem
+alterados.
 
 Configure no ambiente privado da API:
 
@@ -102,10 +123,10 @@ TEMP_LICENSE_TRIAL_ENABLED=false
 O teste de licença temporária vem desativado. Para exibir o cartão de teste em
 `/plans`, defina `TEMP_LICENSE_TRIAL_ENABLED=true` no ambiente da API e reinicie
 o serviço. O endpoint autenticado `/billing/trial` gera uma key Plus sem
-`ownerId`, válida por 12 horas. A key fica salva no armazenamento local do
+`ownerId`, válida pela duração configurada em `plans.json`. A key fica salva no armazenamento local do
 navegador e pode ser recuperada pela própria conta enquanto estiver válida. O
 código de recuperação fica associado ao estado da conta somente durante a janela
-de 12 horas; ao expirar, a API deixa de retorná-lo e remove o código salvo. A
+configurada; ao expirar, a API deixa de retorná-lo e remove o código salvo. A
 licença não recebe `ownerId`, e uma segunda emissão é bloqueada mesmo após a
 expiração. O MongoDB remove a licença expirada por TTL.
 Para ocultar o teste, volte a variável para `false` e reinicie a API.
@@ -130,14 +151,43 @@ Endpoints de gerenciamento:
 ```text
 GET  /billing/catalog
 GET  /billing/state                 # requer sessão
-POST /billing/trial                 # requer sessão; opcional; key temporária de 12h
-POST /billing/checkout              # requer sessão; { "plan": "monthly" | "lifetime" }
+POST /billing/trial                 # requer sessão; opcional; duração definida em plans.json
+POST /billing/checkout              # requer sessão; { "plan": "monthly" | "lifetime" | "aether" | "server_slots", "serverSlots"?: number }
 POST /billing/cancel                # requer sessão; cancela a renovação mensal
 POST /billing/webhook               # validação de assinatura do Mercado Pago
 GET  /billing/purchase/{reference}  # requer sessão e propriedade da compra
 ```
 
-Keys Plus são autorizadas pela existência de um plano mensal válido ou Lifetime
-ativo. Essa mesma regra alimenta a validação pública da key, inclusive após o
-vencimento ou reembolso/contestação. Cancelar uma assinatura mantém o acesso até
-o fim do período registrado como pago.
+## Painel do proprietário
+
+`/panel` no site usa endpoints que exigem sessão Better Auth com a role `owner`;
+todos verificam essa role no servidor. O ID configurado em
+`src/config/roles.ts` é promovido para `owner` na inicialização da API. O painel
+mostra receita confirmada, receita mensal, assinaturas recorrentes ativas,
+compras por conta, cobranças e logs. O livro financeiro registra cada pagamento
+recebido pelo webhook; compras antigas são importadas a partir dos dados ainda
+salvos em `PlanPurchase`, que pode manter apenas o pagamento mais recente de
+cada assinatura mensal.
+
+```text
+GET  /panel/dashboard
+GET  /panel/accounts?limit=25&offset=0 # contas com total por produto
+GET  /panel/transactions?limit=25&offset=0
+GET  /panel/activity
+POST /panel/accounts/lookup  # { "identifier": "ID MongoDB ou e-mail" }
+POST /panel/accounts/access  # plano, vencimento mensal e limite ou ilimitado
+```
+
+O painel não consulta nem retorna chaves de licença. Alterações de plano ficam
+registradas em `AdminAuditLog`; trocar ou revogar uma assinatura mensal também
+cancela a renovação no Mercado Pago quando há uma assinatura vinculada. A role
+owner não concede acesso premium automaticamente; o acesso de plano é um dado
+separado, gerenciado pelo painel.
+
+Keys Plus são autorizadas pela existência de um plano pago ativo configurado em
+`plans.json`. Essa mesma regra alimenta a validação pública da key, inclusive
+após o vencimento ou reembolso/contestação. O limite-base de cada plano e o
+limite do Trial também vêm desse arquivo; vagas extras aprovadas somam-se ao
+limite do plano pago e deixam de contar quando a compra é reembolsada ou
+contestada. Cancelar uma assinatura mantém o acesso e as vagas extras até o fim
+do período registrado como pago.

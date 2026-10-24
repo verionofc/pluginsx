@@ -2,20 +2,26 @@ import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { WebhookSignatureValidator } from "mercadopago";
-import { PLAN_CATALOG, PLAN_PRICES, addOneCalendarMonth, safeReturnPath } from "./billing-config.js";
+import { PLAN_CATALOG, PLAN_PRICES, PLANS_CONFIG, addOneCalendarMonth, safeReturnPath } from "./billing-config.js";
 
 describe("server billing configuration", () => {
   test("keeps the approved prices in the server catalog", () => {
-    assert.deepEqual(PLAN_PRICES, { monthly: 12.53, lifetime: 63.04 });
+    assert.deepEqual(PLAN_PRICES, {
+      monthly: PLANS_CONFIG.plans.monthly.amount,
+      lifetime: PLANS_CONFIG.plans.lifetime.amount,
+      aether: PLANS_CONFIG.plans.aether.amount,
+    });
     assert.deepEqual(PLAN_CATALOG.map(({ id, amount }) => [id, amount]), [
-      ["free", 0],
-      ["monthly", 12.53],
-      ["lifetime", 63.04],
+      [PLANS_CONFIG.plans.trial.id, PLANS_CONFIG.plans.trial.amount],
+      [PLANS_CONFIG.plans.monthly.id, PLANS_CONFIG.plans.monthly.amount],
+      [PLANS_CONFIG.plans.lifetime.id, PLANS_CONFIG.plans.lifetime.amount],
+      [PLANS_CONFIG.plans.aether.id, PLANS_CONFIG.plans.aether.amount],
     ]);
   });
 
   test("allows internal key destinations and rejects external redirects", () => {
     assert.equal(safeReturnPath("/#license"), "/#license");
+    assert.equal(safeReturnPath("/cart"), "/cart");
     assert.equal(safeReturnPath("/account/keys/new"), "/account/keys/new");
     assert.equal(safeReturnPath("https://attacker.example"), "/");
     assert.equal(safeReturnPath("//attacker.example"), "/");

@@ -1,22 +1,71 @@
 import { Elysia } from "elysia";
 import { z } from "zod";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { License } from "../../database/models/License.js";
 import { LicenseServer } from "../../database/models/LicenseServer.js";
 import { PlanAccess } from "../../database/models/PlanAccess.js";
+import { PlanPurchase } from "../../database/models/PlanPurchase.js";
 import { authSessionPlugin } from "../plugins/better-auth.js";
+import { getServerLimitForPlan } from "../plugins/billing-config.js";
 import { view } from "../plugins/license.js";
 import { getPaidPlan } from "../plugins/plan-access.js";
 
-const planForLicense = async (license: { ownerId?: string; sourcePlan?: "trial" | "monthly" | "lifetime"; expiresAt?: Date }) => {
+type LicensePlan = "trial" | "monthly" | "lifetime" | "aether" | null;
+
+const planForLicense = async (license: { ownerId?: string; sourcePlan?: "trial" | "monthly" | "lifetime" | "aether"; expiresAt?: Date }): Promise<LicensePlan> => {
   // Also recognizes trial keys created before `sourcePlan: "trial"` existed.
   if (license.sourcePlan === "trial" || license.expiresAt) return "trial";
   const activePlan = license.ownerId ? await getPaidPlan(license.ownerId) : null;
   return activePlan ?? license.sourcePlan ?? null;
 };
 
-const serverLimitForPlan = (plan: "trial" | "monthly" | "lifetime" | null) =>
-  plan === "trial" ? 1 : plan === "lifetime" ? 5 : 3;
+const serverLimitForPlan = getServerLimitForPlan;
+const unlimitedServerLimit = Number.MAX_SAFE_INTEGER;
+
+const additionalServerSlotsFor = async (userId: string) => {
+  const [purchases] = await PlanPurchase.aggregate<{ total: number }>([
+    { $match: { userId, status: "approved" } },
+    { $group: { _id: null, total: { $sum: { $ifNull: ["$serverSlots", 0] } } } },
+  ]);
+  return Math.max(0, Math.floor(Number(purchases?.total ?? 0)));
+};
+
+const serverLimitForLicense = async (
+  license: { ownerId?: string; sourcePlan?: "trial" | "monthly" | "lifetime" | "aether"; expiresAt?: Date },
+  plan?: LicensePlan,
+) => {
+  const resolvedPlan = plan ?? await planForLicense(license);
+  const baseLimit = serverLimitForPlan(resolvedPlan);
+  if (!license.ownerId || !["monthly", "lifetime", "aether"].includes(resolvedPlan ?? "")) return baseLimit;
+  const activeAccess = await PlanAccess.findOne({
+    userId: license.ownerId,
+    status: "active",
+    $or: [
+      { plan: { $in: ["lifetime", "aether"] } },
+      { plan: "monthly", expiresAt: { $gt: new Date() } },
+    ],
+  }).select({ plan: 1, serverLimitOverride: 1, serverLimitUnlimited: 1 }).lean();
+  if (!activeAccess) return baseLimit;
+  if (activeAccess.serverLimitUnlimited) return unlimitedServerLimit;
+  const paidPlan = activeAccess.plan === "monthly" || activeAccess.plan === "lifetime" || activeAccess.plan === "aether"
+    ? activeAccess.plan
+    : null;
+  if (!paidPlan) return baseLimit;
+  const planLimit = activeAccess.serverLimitOverride ?? serverLimitForPlan(paidPlan);
+  return planLimit + await additionalServerSlotsFor(license.ownerId);
+};
+
+const serverCapacityForLicense = async (
+  license: { ownerId?: string; sourcePlan?: "trial" | "monthly" | "lifetime" | "aether"; expiresAt?: Date },
+  plan?: LicensePlan,
+) => {
+  const limit = await serverLimitForLicense(license, plan);
+  const unlimited = limit === unlimitedServerLimit;
+  return { limit, unlimited };
+};
+
+const accountLicenseRef = (licenseId: string) =>
+  createHash("sha256").update(`pluginsx-account-license:${licenseId}`).digest("hex");
 
 async function enforceServerLimit(licenseId: string, limit: number, now = new Date()) {
   const expiredPending = await LicenseServer.find({
@@ -69,7 +118,7 @@ const serverInfo = z.object({
 });
 
 const publicRecord = (record: any) => ({
-  id: record._id, licenseId: record.licenseId, serverId: record.serverId,
+  id: record._id, serverId: record.serverId,
   name: record.name, minecraftVersion: record.minecraftVersion,
   implementation: record.implementation, implementationVersion: record.implementationVersion,
   pluginVersion: record.pluginVersion, state: record.state,
@@ -90,7 +139,7 @@ export const licenseServerRoutes = new Elysia({ prefix: "/license" })
     const license = await License.findOne({ _id: licenseId, "value.tier": "plus", "value.valid": true }).lean();
     if (!license || !(await view(licenseId)).valid) return status(403, { state: "ERROR", message: "Invalid Plus license" });
     const plan = await planForLicense(license);
-    const serverLimit = serverLimitForPlan(plan);
+    const serverLimit = await serverLimitForLicense(license, plan);
     const now = new Date();
     await enforceServerLimit(licenseId, serverLimit, now);
     const existing = await LicenseServer.findOne({ licenseId, serverId: checked.data.serverId });
@@ -139,7 +188,7 @@ export const licenseServerRoutes = new Elysia({ prefix: "/license" })
     const license = await License.findOne({ _id: licenseId, "value.tier": "plus", "value.valid": true }).lean();
     if (!license || !(await view(licenseId)).valid) return status(403, { state: "ERROR", message: "Invalid Plus license" });
     const plan = await planForLicense(license);
-    await enforceServerLimit(licenseId, serverLimitForPlan(plan));
+    await enforceServerLimit(licenseId, await serverLimitForLicense(license, plan));
     const record = await LicenseServer.findOne({ licenseId, serverId: query.serverId });
     if (!record) return status(404, { state: "ERROR", message: "Activation not found" });
     if (record.state === "PENDING" && record.expiresAt <= new Date()) {
@@ -163,23 +212,50 @@ export const licenseServerRoutes = new Elysia({ prefix: "/license" })
           { _id: trialAccess.trialLicenseCode, sourcePlan: "trial", expiresAt: { $gt: now } },
         ] }
       : { ownerId: user.id }).lean();
+    const licenseLimits = new Map<string, { plan: LicensePlan; limit: number; unlimited: boolean }>();
     for (const license of licenses) {
       const plan = await planForLicense(license);
-      await enforceServerLimit(license._id, serverLimitForPlan(plan), now);
+      const capacity = await serverCapacityForLicense(license, plan);
+      licenseLimits.set(license._id, { plan, ...capacity });
+      await enforceServerLimit(license._id, capacity.limit, now);
     }
     const records = await LicenseServer.find({ licenseId: { $in: licenses.map((item) => item._id) } }).sort({ createdAt: -1 }).lean();
     return Promise.all(licenses.map(async (license) => {
-      const plan = await planForLicense(license);
+      const { plan, limit, unlimited } = licenseLimits.get(license._id) ?? { plan: null, limit: 0, unlimited: false };
       const currentLicense = await License.findById(license._id).select({ serverSlots: 1 }).lean();
       return {
-        id: license._id, tier: license.value.tier, valid: license.value.valid, plan,
+        id: accountLicenseRef(license._id), tier: license.value.tier, valid: license.value.valid, plan,
         expiresAt: license.expiresAt ?? null,
         used: currentLicense?.serverSlots ?? 0,
-        limit: license.value.tier === "plus" ? serverLimitForPlan(plan) : 0,
+        limit: license.value.tier === "plus" ? unlimited ? null : limit : 0,
+        unlimited: license.value.tier === "plus" && unlimited,
         servers: records.filter((record) => record.licenseId === license._id).map(publicRecord),
       };
     }));
   }, { auth: true, detail: { summary: "List current user's licenses and servers", tags: ["License"] } })
+  .post("/servers/key", async ({ user, body, status, set }) => {
+    const { licenseRef } = body as { licenseRef: string };
+    const now = new Date();
+    const trialAccess = await PlanAccess.findOne({
+      userId: user.id,
+      trialLicenseCode: { $exists: true },
+      trialLicenseExpiresAt: { $gt: now },
+    }).select({ trialLicenseCode: 1 }).lean();
+    const licenses = await License.find(trialAccess?.trialLicenseCode
+      ? { $or: [
+          { ownerId: user.id },
+          { _id: trialAccess.trialLicenseCode, sourcePlan: "trial", expiresAt: { $gt: now } },
+        ] }
+      : { ownerId: user.id }).select({ _id: 1 }).lean();
+    const license = licenses.find((item) => accountLicenseRef(item._id) === licenseRef);
+    if (!license) return status(404, { message: "License not found" });
+    set.headers["cache-control"] = "no-store, private";
+    return { key: license._id };
+  }, {
+    auth: true,
+    body: z.object({ licenseRef: z.string().regex(/^[a-f0-9]{64}$/i) }),
+    detail: { summary: "Reveal an owned license key on demand", tags: ["License"] },
+  })
   .post("/servers/:id/:action", async ({ user, params, status }) => {
     if (!["approve", "reject", "remove", "delete"].includes(params.action)) return status(400, { message: "Invalid action" });
     const record = await LicenseServer.findById(params.id);
@@ -195,7 +271,7 @@ export const licenseServerRoutes = new Elysia({ prefix: "/license" })
       const license = await License.findById(record.licenseId).lean();
       if (!license) return status(404, { message: "License not found" });
       const plan = await planForLicense(license);
-      await enforceServerLimit(license._id, serverLimitForPlan(plan));
+      await enforceServerLimit(license._id, await serverLimitForLicense(license, plan));
       const refreshed = await LicenseServer.findById(record._id);
       if (!refreshed || refreshed.state !== "PENDING") {
         return status(409, { message: "The server limit is already full or this request is no longer pending" });

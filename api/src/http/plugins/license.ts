@@ -54,7 +54,7 @@ export async function generate(ownerId: string, tier: TierType): Promise<string>
 
 export async function generatePremiumForAccount(
   ownerId: string,
-  sourcePlan: "monthly" | "lifetime",
+  sourcePlan: "monthly" | "lifetime" | "aether",
 ): Promise<{ code: string; created: boolean }> {
   const existing = await License.findOne({ ownerId })
     .select({ _id: 1 })

@@ -1,15 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import { Button } from "@heroui/react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { TbArrowDown, TbBlocks, TbCheck, TbChevronDown, TbChevronUp, TbCopy, TbDownload, TbEye, TbEyeOff, TbLoader2, TbPick, TbPlayerPause, TbPlayerPlay, TbSparkles, TbVinyl } from "react-icons/tb";
 
-import { authClient } from "@/lib/auth-client";
 import { SiteLoadingScreen } from "@/components/ui/SiteLoadingScreen";
-import { useLoadingDelay } from "@/hooks/useLoadingDelay";
 import { useHydrated } from "@/hooks/useHydrated";
+import { useLoadingDelay } from "@/hooks/useLoadingDelay";
+import { authClient } from "@/lib/auth-client";
 
 type Plugin = {
   name: string;
@@ -62,10 +62,7 @@ export function HomePage() {
       {showLoading && <SiteLoadingScreen detail="Buscando plugins, versões e dados da sua licença." stage="CATÁLOGO · VERSÕES · LICENÇA" />}
       <div aria-hidden={showLoading} className={showLoading ? "invisible" : ""}>
         <AmbientMusic />
-        <main
-          tabIndex={0}
-          className="relative z-10 h-dvh snap-y snap-proximity sm:snap-mandatory overflow-y-auto overscroll-y-contain scroll-smooth"
-        >
+        <main className="relative z-10">
           <LicenseGenerator onInitialReady={markLicenseReady} />
           <PluginInstaller onInitialReady={markPluginsReady} />
         </main>
@@ -203,7 +200,7 @@ export function PluginInstaller({ onInitialReady }: { onInitialReady: () => void
   return (
     <section
       aria-labelledby="plugins-heading"
-      className="relative flex min-h-dvh snap-start flex-col justify-center px-3 py-8 pb-28 sm:px-5 sm:py-12 sm:pb-28 lg:px-6"
+      className="relative flex min-h-dvh flex-col justify-center px-3 pb-28 pt-20 sm:px-5 sm:py-16 sm:pb-28 lg:px-6"
     >
       <motion.div
         initial={prefersReducedMotion ? false : { opacity: 0, y: 24 }}
@@ -213,28 +210,39 @@ export function PluginInstaller({ onInitialReady }: { onInitialReady: () => void
           duration: prefersReducedMotion ? 0 : 0.6,
           ease: [0.2, 0.8, 0.2, 1],
         }}
-        className="mx-auto w-full max-w-5xl"
+        className="mx-auto w-full max-w-6xl"
       >
-        <div className="mb-4 flex items-end justify-between gap-3 sm:mb-5 sm:gap-4">
-          <div>
-            <p className="mb-2 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.24em] text-[#91b56b]">
-              <TbBlocks size={15} aria-hidden="true" /> Catálogo PaperMC
+        <header className="mb-7 flex items-end justify-between gap-4 sm:mb-8">
+          <div className="min-w-0">
+            <p className="mb-2 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-[#b9d59b] sm:text-xs">
+              <span className="text-[#a6cf74]">02</span>
+              <span className="text-[#718667]">/</span>
+              Baú de ferramentas
             </p>
-            <h2 id="plugins-heading" className="font-minecraft-text text-2xl font-black tracking-tight sm:text-3xl">
-              Instalar plugins
+            <h2 id="plugins-heading" className="font-minecraft-text text-2xl font-black leading-tight text-white sm:text-3xl lg:text-4xl">
+              Escolha o próximo bloco.
             </h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-white/65">
+              Encontre o plugin e a versão que encaixam no seu servidor PaperMC.
+            </p>
           </div>
-          <span className="hidden shrink-0 border border-foreground/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-foreground/50 md:block">
-            {plugins.length} {plugins.length === 1 ? "item" : "itens"}
-          </span>
-        </div>
+          <div className="hidden shrink-0 items-center gap-3 border-l-2 border-[#a6cf74]/55 pl-4 sm:flex">
+            <TbBlocks aria-hidden="true" className="size-6 text-[#a6cf74]" />
+            <div>
+              <p className="text-[9px] font-bold uppercase tracking-[0.17em] text-white/45">No catálogo</p>
+              <p className="font-minecraft-text text-lg font-bold text-white">
+                {String(plugins.length).padStart(2, "0")} <span className="font-sans text-xs font-medium text-white/50">{plugins.length === 1 ? "plugin" : "plugins"}</span>
+              </p>
+            </div>
+          </div>
+        </header>
 
-        <div className="grid overflow-hidden rounded-2xl border border-[#8ca878]/25 bg-[#111a16] text-[#eff5df] shadow-[0_24px_70px_-40px_rgba(35,77,45,0.7)] lg:grid-cols-[0.8fr_1.2fr]">
+        <div className="grid overflow-hidden border-2 border-[#718667]/40 bg-[#111a16] text-[#eff5df] shadow-[0_8px_0_#070b08,0_24px_70px_-40px_rgba(35,77,45,0.75)] lg:grid-cols-[0.8fr_1.2fr]">
           <div className="relative flex min-h-56 flex-col justify-between overflow-hidden border-b border-[#8ca878]/20 bg-[radial-gradient(ellipse_at_20%_20%,rgba(106,160,80,0.2),transparent_60%),linear-gradient(145deg,#1b2c22,#111a16)] p-4 sm:p-6 lg:border-r lg:border-b-0 lg:p-8">
-            <div aria-hidden="true" className="absolute -right-8 -bottom-10 size-48 rotate-12 border-18 border-[#8bc34a]/10" />
+            <div aria-hidden="true" className="absolute -right-8 -bottom-10 size-48 rotate-12 border-[18px] border-[#8bc34a]/10" />
             <div className="relative flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-[#b9d59b]">
               <span className="size-2 bg-[#8bc34a] shadow-[0_0_12px_#8bc34a]" />
-              Baú de downloads
+              Carga selecionada
             </div>
 
             <div className="relative my-8">
@@ -273,7 +281,7 @@ export function PluginInstaller({ onInitialReady }: { onInitialReady: () => void
                   value={selectedSlug}
                   onChange={(event) => setSelectedSlug(event.target.value)}
                   disabled={isLoadingPlugins || plugins.length === 0}
-                  className="mt-2 h-12 min-w-0 w-full rounded-lg border border-[#718667]/35 bg-[#0c130f] px-3 text-sm text-[#eff5df] outline-none transition focus:border-[#a6cf74] disabled:opacity-50"
+                  className="mt-2 h-12 min-w-0 w-full rounded-none border border-[#718667]/35 bg-[#0c130f] px-3 text-sm text-[#eff5df] outline-none transition focus:border-[#a6cf74] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c9e9a8] disabled:opacity-50"
                 >
                   {isLoadingPlugins && <option value="">Carregando catálogo...</option>}
                   {!isLoadingPlugins && plugins.length === 0 && <option value="">Sem plugins</option>}
@@ -289,7 +297,7 @@ export function PluginInstaller({ onInitialReady }: { onInitialReady: () => void
                   value={selectedMinecraft}
                   onChange={(event) => selectMinecraft(event.target.value)}
                   disabled={isLoadingReleases || minecraftVersions.length === 0}
-                  className="mt-2 h-12 min-w-0 w-full rounded-lg border border-[#718667]/35 bg-[#0c130f] px-3 text-sm text-[#eff5df] outline-none transition focus:border-[#a6cf74] disabled:opacity-50"
+                  className="mt-2 h-12 min-w-0 w-full rounded-none border border-[#718667]/35 bg-[#0c130f] px-3 text-sm text-[#eff5df] outline-none transition focus:border-[#a6cf74] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c9e9a8] disabled:opacity-50"
                 >
                   {isLoadingReleases && <option value="">Carregando versões...</option>}
                   {!isLoadingReleases && minecraftVersions.length === 0 && <option value="">Sem versões</option>}
@@ -303,7 +311,7 @@ export function PluginInstaller({ onInitialReady }: { onInitialReady: () => void
                   value={selectedRelease?.pluginVersion ?? ""}
                   onChange={(event) => setSelectedPluginVersion(event.target.value)}
                   disabled={isLoadingReleases || pluginVersions.length === 0}
-                  className="mt-2 h-12 min-w-0 w-full rounded-lg border border-[#718667]/35 bg-[#0c130f] px-3 text-sm text-[#eff5df] outline-none transition focus:border-[#a6cf74] disabled:opacity-50"
+                  className="mt-2 h-12 min-w-0 w-full rounded-none border border-[#718667]/35 bg-[#0c130f] px-3 text-sm text-[#eff5df] outline-none transition focus:border-[#a6cf74] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c9e9a8] disabled:opacity-50"
                 >
                   {pluginVersions.map((version) => (
                     <option key={version} value={version}>
@@ -327,7 +335,7 @@ export function PluginInstaller({ onInitialReady }: { onInitialReady: () => void
             <a
               href={selectedRelease && apiUrl ? `${apiUrl}${selectedRelease.downloadUrl}` : undefined}
               aria-disabled={!selectedRelease || isLoadingReleases}
-              className={`font-minecraft-text mt-5 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-lg border-b-4 px-3 py-3 text-xs font-bold transition sm:px-5 sm:text-sm ${selectedRelease && !isLoadingReleases ? "border-[#345d2f] bg-[#5e9b43] text-white shadow-[0_5px_20px_rgba(71,134,55,0.2)] hover:bg-[#6eaa4d]" : "pointer-events-none border-[#394139] bg-[#343d34] text-[#8f9b89]"}`}
+              className={`font-minecraft-text mt-5 inline-flex min-h-12 w-full items-center justify-center gap-2 border-b-4 px-3 py-3 text-xs font-bold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white sm:px-5 sm:text-sm ${selectedRelease && !isLoadingReleases ? "border-[#345d2f] bg-[#5e9b43] text-white shadow-[0_5px_20px_rgba(71,134,55,0.2)] hover:bg-[#6eaa4d]" : "pointer-events-none border-[#394139] bg-[#343d34] text-[#8f9b89]"}`}
             >
               {isLoadingReleases ? <TbLoader2 size={18} className="animate-spin" aria-hidden="true" /> : <TbDownload size={18} aria-hidden="true" />}
               {isLoadingReleases ? "Buscando no baú..." : "Baixar arquivo .jar"}
@@ -515,30 +523,66 @@ export function LicenseGenerator({ onInitialReady }: { onInitialReady: () => voi
   return (
     <motion.section
       id="license"
-      aria-labelledby="license-heading"
+      aria-labelledby="portal-title"
       initial={prefersReducedMotion ? false : { opacity: 0, y: 28 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: false, amount: 0.2 }}
       transition={{ duration: prefersReducedMotion ? 0 : 0.55, ease: [0.2, 0.8, 0.2, 1] }}
-      className="relative isolate flex min-h-dvh snap-start items-center justify-center overflow-hidden px-2.5 py-6 pb-24 sm:px-5 sm:py-12 sm:pb-28 lg:px-6 lg:py-16"
+      className="relative isolate flex min-h-dvh flex-col justify-center overflow-hidden px-3 py-20 pb-28 sm:px-5 sm:py-20 lg:px-6"
     >
+      <header className="mx-auto mb-7 grid w-full max-w-6xl gap-5 border-b border-[#b5d58a]/20 pb-6 sm:mb-8 sm:pb-8 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-center">
+        <div>
+          <p className="mb-3 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-[#b9d59b] sm:text-xs">
+            <span className="grid size-6 place-items-center border border-[#a6cf74]/50 text-[9px] text-[#a6cf74]">01</span>
+            Portal de entrada <span className="text-white/30">/</span> PluginsX
+          </p>
+          <h1 id="portal-title" className="font-minecraft-text max-w-3xl text-3xl font-black leading-tight text-white sm:text-4xl lg:text-5xl">
+            Um mundo novo começa no <span className="text-[#a6cf74]">spawn.</span>
+          </h1>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-white/70 sm:text-base">
+            Gere sua key, escolha os plugins e prepare o servidor para abrir as portas.
+          </p>
+          <ol aria-label="Etapas para preparar o servidor" className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-2 text-[10px] font-bold uppercase tracking-[0.12em] text-white/55 sm:gap-x-4">
+            <li className="flex items-center gap-2"><span className="text-[#a6cf74]">01</span> Acesso</li>
+            <li aria-hidden="true" className="text-[#718667]">━━</li>
+            <li className="flex items-center gap-2"><span className="text-[#a6cf74]">02</span> Equipamento</li>
+            <li aria-hidden="true" className="text-[#718667]">━━</li>
+            <li className="flex items-center gap-2"><span className="text-[#a6cf74]">03</span> Seu mundo</li>
+          </ol>
+        </div>
+
+        <div aria-hidden="true" className="relative h-32 overflow-hidden border border-[#91ac7c]/25 bg-[#0c1510] sm:h-36 lg:h-44">
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(166,207,116,0.06)_1px,transparent_1px),linear-gradient(90deg,rgba(166,207,116,0.06)_1px,transparent_1px)] bg-size-[18px_18px]" />
+          <div className="absolute inset-x-0 bottom-0 h-8 bg-[linear-gradient(90deg,#1d3427_0_17%,#345d2f_17%_35%,#714c32_35%_50%,#243326_50%_72%,#1b2c22_72%)] sm:h-12" />
+          <div className="absolute bottom-8 left-4 h-6 w-12 border-x-4 border-t-4 border-[#a6cf74]/45 sm:bottom-12 sm:left-8 sm:h-8 sm:w-14" />
+          <div className="absolute bottom-8 left-1/2 grid size-20 -translate-x-1/2 place-items-center border-4 border-[#b5d58a] bg-[#1b2c22] shadow-[0_0_34px_rgba(166,207,116,0.35),inset_0_0_0_5px_#101811] sm:bottom-12 sm:size-24">
+            <div className="absolute inset-2 border border-[#a6cf74]/35" />
+            <TbPick className="relative size-9 text-[#d5e4c8] drop-shadow-[3px_4px_0_#172315] sm:size-11" />
+          </div>
+          <div className="absolute bottom-8 right-4 h-6 w-14 border-x-4 border-t-4 border-[#8a5c39]/70 sm:bottom-12 sm:right-7 sm:h-8 sm:w-16" />
+          <span className="absolute left-3 top-3 bg-[#101811]/90 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.16em] text-[#b9d59b]">Ponto de partida</span>
+          <span className="absolute right-3 top-3 size-2 bg-[#a6cf74] shadow-[0_0_12px_#a6cf74]" />
+        </div>
+      </header>
+
       <motion.section
+        aria-labelledby="license-heading"
         initial={prefersReducedMotion ? false : { opacity: 0, y: 22, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.55, ease: [0.2, 0.8, 0.2, 1] }}
-        className="w-full max-w-5xl overflow-hidden rounded-xl border border-[#8ca878]/30 border-t-4 border-t-[#8bc34a] bg-[#111a16] text-[#eff5df] shadow-[0_30px_100px_-36px_rgba(35,77,45,0.75)] sm:rounded-[1.75rem]"
+        className="mx-auto w-full max-w-6xl overflow-hidden border-2 border-[#718667]/40 border-t-4 border-t-[#8bc34a] bg-[#111a16] text-[#eff5df] shadow-[0_8px_0_#070b08,0_30px_100px_-36px_rgba(35,77,45,0.75)]"
       >
         <div className="grid lg:grid-cols-[0.9fr_1.1fr]">
           <div className="relative grid grid-cols-[1fr_auto] items-center gap-x-2 gap-y-3 overflow-hidden border-b border-[#8ca878]/20 bg-[radial-gradient(ellipse_at_50%_25%,rgba(106,160,80,0.28),transparent_65%),linear-gradient(145deg,#1d3427,#111a16_78%)] p-4 sm:flex sm:min-h-64 sm:flex-col sm:justify-between sm:p-8 lg:border-r lg:border-b-0 lg:p-10">
             <div className="absolute inset-0 opacity-30 bg-[linear-gradient(45deg,rgba(255,255,255,0.05)_25%,transparent_25%,transparent_75%,rgba(255,255,255,0.05)_75%)] bg-size-[18px_18px]" />
             <div className="relative col-span-2 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.18em] text-[#b9d59b] sm:col-span-1 sm:text-[11px] sm:tracking-[0.22em]">
               <span className="size-2 bg-[#8bc34a] shadow-[0_0_12px_#8bc34a]" />
-              Bancada de licenças
+              Núcleo de acesso
             </div>
 
             <div className="relative min-w-0 sm:hidden">
               <p className="font-minecraft-text text-sm font-bold text-white">SpawnerX</p>
-              <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#9aaf91]">Key de acesso · 01</p>
+              <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#9aaf91]">Peça inicial · 01</p>
             </div>
 
             <motion.div
@@ -556,26 +600,30 @@ export function LicenseGenerator({ onInitialReady }: { onInitialReady: () => voi
             </motion.div>
 
             <div className="relative col-span-2 flex items-center justify-between border-t border-[#b5d58a]/20 pt-3 text-[9px] font-semibold uppercase tracking-[0.16em] text-[#9aaf91] sm:col-span-1 sm:pt-4 sm:text-[10px] sm:tracking-[0.18em]">
-              <span>Licença PluginsX</span>
+              <span>Chave do servidor</span>
               <span>Slot 01 / 01</span>
             </div>
           </div>
 
           <div className="flex min-w-0 flex-col justify-center p-4 sm:p-8 lg:p-12">
             <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#a6cf74] sm:text-xs sm:tracking-[0.24em]">
-              SpawnerX · licença do servidor
+              SpawnerX <span className="text-white/30">/</span> acesso do servidor
             </p>
-            <h1 id="license-heading" className="font-minecraft-text mt-2 text-2xl font-black leading-tight tracking-tight sm:mt-3 sm:text-3xl lg:text-4xl">
-              Acesso ao seu servidor
-            </h1>
+            <h2 id="license-heading" className="font-minecraft-text mt-2 text-2xl font-black leading-tight tracking-tight sm:mt-3 sm:text-3xl lg:text-4xl">
+              Abra as portas.
+            </h2>
             <p className="mt-2 max-w-md text-[13px] leading-5 text-[#b3c0ad] sm:mt-3 sm:text-sm sm:leading-6">
-              Gere sua key para usar os plugins. Se já tiver uma, recuperamos a mesma para você.
+              Gere a key que ativa o plugin. Se já tiver uma, recuperamos a mesma para você.
             </p>
 
             <div className="mt-5 grid grid-cols-3 gap-2 sm:mt-7" aria-hidden="true">
-              {["#769a50", "#4e703a", "#769a50"].map((color, index) => (
+              {[
+                ["leaf-left", "#769a50"],
+                ["soil", "#4e703a"],
+                ["leaf-right", "#769a50"],
+              ].map(([key, color], index) => (
                 <motion.div
-                  key={index}
+                  key={key}
                   animate={prefersReducedMotion ? undefined : { opacity: [0.55, 1, 0.55] }}
                   transition={{ duration: 2.4, delay: index * 0.25, repeat: Infinity }}
                   className="h-1.5"
@@ -594,7 +642,7 @@ export function LicenseGenerator({ onInitialReady }: { onInitialReady: () => voi
                   variant="primary"
                   onPress={generateLicense}
                   isDisabled={isLoading}
-                  className="font-minecraft-text h-12 w-full whitespace-nowrap rounded-lg border-b-4 border-[#345d2f] bg-[#5e9b43] px-2 text-xs font-bold text-[#f7ffe9] shadow-[0_5px_20px_rgba(71,134,55,0.2)] hover:bg-[#6eaa4d] sm:px-4 sm:text-sm"
+                  className="font-minecraft-text h-12 w-full whitespace-nowrap border-b-4 border-[#345d2f] bg-[#5e9b43] px-2 text-xs font-bold text-[#f7ffe9] shadow-[0_5px_20px_rgba(71,134,55,0.2)] hover:bg-[#6eaa4d] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white sm:px-4 sm:text-sm"
                 >
                   <TbPick size={19} aria-hidden="true" />
                   {isLoading ? "Verificando..." : "Gerar minha key"}
@@ -611,7 +659,7 @@ export function LicenseGenerator({ onInitialReady }: { onInitialReady: () => voi
                   variant="primary"
                   onPress={generatePremiumLicense}
                   isDisabled={isPremiumLoading || isPremiumStatusLoading || !isSessionReady}
-                  className="font-minecraft-text relative h-12 w-full whitespace-nowrap overflow-hidden rounded-lg border-b-4 border-[#581c87] bg-[#6d28d9] px-2 text-xs font-bold text-white shadow-[0_5px_24px_rgba(147,51,234,0.38)] hover:bg-[#7c3aed] sm:px-4 sm:text-sm"
+                  className="font-minecraft-text relative h-12 w-full whitespace-nowrap overflow-hidden border-b-4 border-[#581c87] bg-[#6d28d9] px-2 text-xs font-bold text-white shadow-[0_5px_24px_rgba(147,51,234,0.38)] hover:bg-[#7c3aed] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white sm:px-4 sm:text-sm"
                 >
                   <motion.span
                     aria-hidden="true"
@@ -668,7 +716,7 @@ export function LicenseGenerator({ onInitialReady }: { onInitialReady: () => voi
                   <span>Slot de inventário</span>
                   <span className="flex items-center gap-1 text-[#b9d59b]"><TbCheck size={13} /> obtido</span>
                 </div>
-                <code className="block break-all rounded bg-[#17231a] px-3 py-3 text-left text-sm font-semibold text-[#d9f2bd]">
+                <code className="block break-all border border-[#718667]/25 bg-[#17231a] px-3 py-3 text-left text-sm font-semibold text-[#d9f2bd]">
                   {license}
                 </code>
                 <Button
@@ -684,12 +732,11 @@ export function LicenseGenerator({ onInitialReady }: { onInitialReady: () => voi
             )}
 
             {premiumMessage && (
-              <div
+              <output
                 className="mt-5 border-l-2 border-fuchsia-400 bg-fuchsia-950/20 py-2 pl-3 text-sm text-fuchsia-100/85"
-                role="status"
               >
                 <p>{premiumMessage}</p>
-              </div>
+              </output>
             )}
 
             {premiumLicense && isSessionReady && session && (
@@ -715,13 +762,13 @@ export function LicenseGenerator({ onInitialReady }: { onInitialReady: () => voi
                       aria-label={isPremiumLicenseVisible ? "Ocultar key Premium" : "Mostrar key Premium"}
                       aria-pressed={isPremiumLicenseVisible}
                       title={isPremiumLicenseVisible ? "Ocultar key" : "Mostrar key"}
-                      className="grid size-8 place-items-center rounded-md border border-fuchsia-200/15 text-fuchsia-100/75 transition-colors hover:bg-fuchsia-300/10 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fuchsia-200"
+                      className="grid size-8 place-items-center border border-fuchsia-200/15 text-fuchsia-100/75 transition-colors hover:bg-fuchsia-300/10 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fuchsia-200"
                     >
                       {isPremiumLicenseVisible ? <TbEyeOff size={16} aria-hidden="true" /> : <TbEye size={16} aria-hidden="true" />}
                     </button>
                   </span>
                 </div>
-                <code className="relative block break-all rounded bg-purple-950/55 px-3 py-3 text-left text-sm font-semibold text-fuchsia-100 ring-1 ring-fuchsia-300/10">
+                <code className="relative block break-all border border-fuchsia-300/15 bg-purple-950/55 px-3 py-3 text-left text-sm font-semibold text-fuchsia-100">
                   {isPremiumLicenseVisible ? premiumLicense : "••••••••••••••••••••••••••••••••"}
                 </code>
                 <Button
@@ -737,9 +784,9 @@ export function LicenseGenerator({ onInitialReady }: { onInitialReady: () => voi
             )}
 
             {message && (
-              <p className="mt-4 border-l-2 border-[#8bc34a] pl-3 text-sm text-[#c8d5bf]" role="status">
+              <output className="mt-4 border-l-2 border-[#8bc34a] pl-3 text-sm text-[#c8d5bf]">
                 {message}
-              </p>
+              </output>
             )}
           </div>
         </div>
@@ -780,6 +827,7 @@ export function AmbientMusic() {
 
   return (
     <>
+      {/* biome-ignore lint/a11y/useMediaCaption: The player offers optional instrumental ambience with accessible custom controls. */}
       <audio
         ref={audioRef}
         src="/music/minecraft-noises.mp3"
@@ -925,7 +973,7 @@ export function AmbientMusic() {
             )}
           </AnimatePresence>
         </motion.div>
-        {!isMinimized && error && <p role="status" className="mt-1.5 pl-2 text-[11px] text-red-200">{error}</p>}
+        {!isMinimized && error && <output className="mt-1.5 pl-2 text-[11px] text-red-200">{error}</output>}
       </motion.aside>
     </>
   );
