@@ -10,6 +10,10 @@ export interface LicenseInterface {
     valid: boolean;
   };
   serverSlots?: number;
+  sourcePlan?: "trial" | "monthly" | "lifetime";
+  expiresAt?: Date;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 const LicenseSchema = new Schema<LicenseInterface>({
@@ -24,11 +28,16 @@ const LicenseSchema = new Schema<LicenseInterface>({
     },
     valid: { type: Boolean, default: true },
   },
-  serverSlots: { type: Number, default: 0, min: 0, max: 3 },
-});
+  // Lifetime licenses can reserve five servers; the API enforces the
+  // per-plan limit when creating each reservation.
+  serverSlots: { type: Number, default: 0, min: 0, max: 5 },
+  sourcePlan: { type: String, enum: ["trial", "monthly", "lifetime"] },
+  expiresAt: { type: Date },
+}, { timestamps: true });
 
 // Sparse uniqueness permits the shared default license while enforcing one
 // account-bound license for each authenticated user.
 LicenseSchema.index({ ownerId: 1 }, { unique: true, sparse: true });
+LicenseSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 export const License = model<LicenseInterface>("license", LicenseSchema);

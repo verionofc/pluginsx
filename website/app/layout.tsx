@@ -1,10 +1,20 @@
 import type { Metadata } from "next";
+import localFont from "next/font/local";
 
 import "@/styles/globals.css";
 import { AccountNav } from "@/components/ui/AccountNav";
 import { MiniFooter } from "@/components/ui/MiniFooter";
 import { settings } from "@/lib";
 import { DefaultProviders } from "@/lib/providers";
+
+const monocraft = localFont({
+  src: [
+    { path: "./fonts/Monocraft-Regular.ttf", weight: "400", style: "normal" },
+    { path: "./fonts/Monocraft-Bold.ttf", weight: "700", style: "normal" },
+  ],
+  variable: "--font-minecraft",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: {
@@ -25,7 +35,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="pt-BR" className="h-full antialiased" suppressHydrationWarning>
+    <html
+      lang="pt-BR"
+      className={`${monocraft.variable} h-full antialiased`}
+      suppressHydrationWarning
+    >
       <body className="antialiased relative isolate flex min-h-screen w-full flex-col overflow-x-hidden bg-black">
         <div
           aria-hidden="true"

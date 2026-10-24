@@ -1,12 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@heroui/react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { TbArrowDown, TbBlocks, TbCheck, TbChevronDown, TbChevronUp, TbCopy, TbDownload, TbEye, TbEyeOff, TbLoader2, TbPick, TbPlayerPause, TbPlayerPlay, TbSparkles, TbVinyl } from "react-icons/tb";
 
 import { authClient } from "@/lib/auth-client";
+import { SiteLoadingScreen } from "@/components/ui/SiteLoadingScreen";
+import { useLoadingDelay } from "@/hooks/useLoadingDelay";
+import { useHydrated } from "@/hooks/useHydrated";
 
 type Plugin = {
   name: string;
@@ -47,22 +50,32 @@ function preferredRelease(releases: Release[], preferredVersion: string) {
 }
 
 export function HomePage() {
+  const [pluginsReady, setPluginsReady] = useState(false);
+  const [licenseReady, setLicenseReady] = useState(false);
+  const markPluginsReady = useCallback(() => setPluginsReady(true), []);
+  const markLicenseReady = useCallback(() => setLicenseReady(true), []);
+  const isLoading = !pluginsReady || !licenseReady;
+  const showLoading = useLoadingDelay(isLoading);
+
   return (
     <div className="relative min-h-dvh">
-      <AmbientMusic />
-      <main
-        tabIndex={0}
-        className="relative z-10 h-dvh snap-y snap-proximity sm:snap-mandatory overflow-y-auto overscroll-y-contain scroll-smooth"
-      >
-        <LicenseGenerator />
-        <PluginInstaller />
-      </main>
+      {showLoading && <SiteLoadingScreen detail="Buscando plugins, versões e dados da sua licença." stage="CATÁLOGO · VERSÕES · LICENÇA" />}
+      <div aria-hidden={showLoading} className={showLoading ? "invisible" : ""}>
+        <AmbientMusic />
+        <main
+          tabIndex={0}
+          className="relative z-10 h-dvh snap-y snap-proximity sm:snap-mandatory overflow-y-auto overscroll-y-contain scroll-smooth"
+        >
+          <LicenseGenerator onInitialReady={markLicenseReady} />
+          <PluginInstaller onInitialReady={markPluginsReady} />
+        </main>
+      </div>
     </div>
   );
 }
 
 
-export function PluginInstaller() {
+export function PluginInstaller({ onInitialReady }: { onInitialReady: () => void }) {
   const prefersReducedMotion = useReducedMotion();
   const [plugins, setPlugins] = useState<Plugin[]>([]);
   const [selectedSlug, setSelectedSlug] = useState("");
@@ -70,8 +83,9 @@ export function PluginInstaller() {
   const [selectedMinecraft, setSelectedMinecraft] = useState("");
   const [selectedPluginVersion, setSelectedPluginVersion] = useState("");
   const [isLoadingPlugins, setIsLoadingPlugins] = useState(true);
-  const [isLoadingReleases, setIsLoadingReleases] = useState(false);
+  const [isLoadingReleases, setIsLoadingReleases] = useState(true);
   const [error, setError] = useState("");
+  const [initialDataSettled, setInitialDataSettled] = useState(false);
 
   const selectedPlugin = plugins.find((plugin) => plugin.slug === selectedSlug);
   const minecraftVersions = [...new Set(releases.map((release) => release.minecraft))].sort(
@@ -119,6 +133,16 @@ export function PluginInstaller() {
     void loadPlugins();
     return () => controller.abort();
   }, []);
+
+  useEffect(() => {
+    if (!isLoadingPlugins && !selectedPlugin) setIsLoadingReleases(false);
+  }, [isLoadingPlugins, selectedPlugin]);
+
+  useEffect(() => {
+    if (isLoadingPlugins || isLoadingReleases || initialDataSettled) return;
+    setInitialDataSettled(true);
+    onInitialReady();
+  }, [initialDataSettled, isLoadingPlugins, isLoadingReleases, onInitialReady]);
 
   useEffect(() => {
     if (!selectedPlugin) return;
@@ -321,7 +345,7 @@ export function PluginInstaller() {
 }
 
 
-export function LicenseGenerator() {
+export function LicenseGenerator({ onInitialReady }: { onInitialReady: () => void }) {
   const router = useRouter();
   const [license, setLicense] = useState<string>();
   const [message, setMessage] = useState("");
@@ -330,18 +354,25 @@ export function LicenseGenerator() {
   const [isPremiumLicenseVisible, setIsPremiumLicenseVisible] = useState(false);
   const [premiumMessage, setPremiumMessage] = useState("");
   const [isPremiumLoading, setIsPremiumLoading] = useState(false);
-  const [isPremiumStatusLoading, setIsPremiumStatusLoading] = useState(false);
+  const [isPremiumStatusLoading, setIsPremiumStatusLoading] = useState(true);
   const { data: session, isPending: isSessionPending } = authClient.useSession();
+  const hasHydrated = useHydrated();
+  const isSessionReady = hasHydrated && !isSessionPending;
   const prefersReducedMotion = useReducedMotion();
 
   useEffect(() => {
     setPremiumLicense(undefined);
-    if (isSessionPending) return;
+    if (!isSessionReady) return;
     if (!session) {
       setIsPremiumStatusLoading(false);
+      onInitialReady();
       return;
     }
-    if (!apiUrl) return;
+    if (!apiUrl) {
+      setIsPremiumStatusLoading(false);
+      onInitialReady();
+      return;
+    }
 
     const controller = new AbortController();
     setIsPremiumStatusLoading(true);
@@ -358,10 +389,13 @@ export function LicenseGenerator() {
         setPremiumMessage("Não foi possível consultar sua key Premium agora.");
       }
     }).finally(() => {
-      if (!controller.signal.aborted) setIsPremiumStatusLoading(false);
+      if (!controller.signal.aborted) {
+        setIsPremiumStatusLoading(false);
+        onInitialReady();
+      }
     });
     return () => controller.abort();
-  }, [isSessionPending, session]);
+  }, [isSessionReady, onInitialReady, session]);
 
   async function generateLicense() {
     setIsLoading(true);
@@ -415,7 +449,7 @@ export function LicenseGenerator() {
     setPremiumMessage("");
 
     if (!session) {
-      router.push("/account?notice=premium-key");
+      router.push(`/account?returnTo=${encodeURIComponent("/#license")}&notice=premium-key`);
       return;
     }
 
@@ -432,7 +466,7 @@ export function LicenseGenerator() {
       });
 
       if (response.status === 401) {
-        router.push("/account?notice=premium-key");
+        router.push(`/account?returnTo=${encodeURIComponent("/#license")}&notice=premium-key`);
         return;
       }
 
@@ -440,6 +474,10 @@ export function LicenseGenerator() {
         message?: string;
       };
       if (!response.ok) {
+        if (response.status === 403) {
+          router.push(`/plans?returnTo=${encodeURIComponent("/#license")}`);
+          return;
+        }
         throw new Error(result.message ?? "Não foi possível gerar sua key Premium.");
       }
       if (result.tier !== "plus" || !result.code || !result.valid) {
@@ -476,59 +514,65 @@ export function LicenseGenerator() {
 
   return (
     <motion.section
+      id="license"
       aria-labelledby="license-heading"
       initial={prefersReducedMotion ? false : { opacity: 0, y: 28 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: false, amount: 0.2 }}
       transition={{ duration: prefersReducedMotion ? 0 : 0.55, ease: [0.2, 0.8, 0.2, 1] }}
-      className="relative isolate flex min-h-dvh snap-start items-center justify-center overflow-hidden px-3 py-8 pb-28 sm:px-5 sm:py-12 sm:pb-28 lg:px-6 lg:py-16"
+      className="relative isolate flex min-h-dvh snap-start items-center justify-center overflow-hidden px-2.5 py-6 pb-24 sm:px-5 sm:py-12 sm:pb-28 lg:px-6 lg:py-16"
     >
       <motion.section
         initial={prefersReducedMotion ? false : { opacity: 0, y: 22, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.55, ease: [0.2, 0.8, 0.2, 1] }}
-        className="w-full max-w-5xl overflow-hidden rounded-2xl sm:rounded-[1.75rem] border border-[#8ca878]/25 bg-[#111a16] text-[#eff5df] shadow-[0_30px_100px_-36px_rgba(35,77,45,0.75)]"
+        className="w-full max-w-5xl overflow-hidden rounded-xl border border-[#8ca878]/30 border-t-4 border-t-[#8bc34a] bg-[#111a16] text-[#eff5df] shadow-[0_30px_100px_-36px_rgba(35,77,45,0.75)] sm:rounded-[1.75rem]"
       >
         <div className="grid lg:grid-cols-[0.9fr_1.1fr]">
-          <div className="relative flex min-h-52 flex-col justify-between overflow-hidden border-b border-[#8ca878]/20 bg-[radial-gradient(ellipse_at_50%_25%,rgba(106,160,80,0.28),transparent_65%),linear-gradient(145deg,#1d3427,#111a16_78%)] p-5 sm:min-h-64 sm:p-8 lg:border-r lg:border-b-0 lg:p-10">
+          <div className="relative grid grid-cols-[1fr_auto] items-center gap-x-2 gap-y-3 overflow-hidden border-b border-[#8ca878]/20 bg-[radial-gradient(ellipse_at_50%_25%,rgba(106,160,80,0.28),transparent_65%),linear-gradient(145deg,#1d3427,#111a16_78%)] p-4 sm:flex sm:min-h-64 sm:flex-col sm:justify-between sm:p-8 lg:border-r lg:border-b-0 lg:p-10">
             <div className="absolute inset-0 opacity-30 bg-[linear-gradient(45deg,rgba(255,255,255,0.05)_25%,transparent_25%,transparent_75%,rgba(255,255,255,0.05)_75%)] bg-size-[18px_18px]" />
-            <div className="relative flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.22em] text-[#b9d59b]">
+            <div className="relative col-span-2 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.18em] text-[#b9d59b] sm:col-span-1 sm:text-[11px] sm:tracking-[0.22em]">
               <span className="size-2 bg-[#8bc34a] shadow-[0_0_12px_#8bc34a]" />
-              Estação de criação
+              Bancada de licenças
+            </div>
+
+            <div className="relative min-w-0 sm:hidden">
+              <p className="font-minecraft-text text-sm font-bold text-white">SpawnerX</p>
+              <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#9aaf91]">Key de acesso · 01</p>
             </div>
 
             <motion.div
               aria-hidden="true"
               animate={prefersReducedMotion ? undefined : { y: [0, -8, 0], rotate: [0, -2, 2, 0] }}
               transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
-              className="relative mx-auto my-8 grid size-36 place-items-center border-4 border-[#b5d58a]/70 bg-[linear-gradient(135deg,#85b94e_0_34%,#4b8739_34%_67%,#714c32_67%)] shadow-[inset_0_0_0_5px_rgba(20,40,24,0.25),12px_14px_0_rgba(5,12,8,0.3),0_0_55px_rgba(116,183,74,0.25)] sm:size-40"
+              className="relative col-start-2 row-start-2 mx-1 my-0 grid size-24 place-items-center border-4 border-[#b5d58a]/70 bg-[linear-gradient(135deg,#85b94e_0_34%,#4b8739_34%_67%,#714c32_67%)] shadow-[inset_0_0_0_5px_rgba(20,40,24,0.25),8px_9px_0_rgba(5,12,8,0.3),0_0_40px_rgba(116,183,74,0.25)] sm:mx-auto sm:my-8 sm:size-36 sm:shadow-[inset_0_0_0_5px_rgba(20,40,24,0.25),12px_14px_0_rgba(5,12,8,0.3),0_0_55px_rgba(116,183,74,0.25)]"
             >
               <div className="absolute inset-3 border border-white/15" />
-              <TbPick size={58} strokeWidth={1.5} className="drop-shadow-[3px_4px_0_rgba(0,0,0,0.4)] text-[#f0dfaa]" />
+              <TbPick size={48} strokeWidth={1.5} className="drop-shadow-[3px_4px_0_rgba(0,0,0,0.4)] text-[#f0dfaa] sm:hidden" />
+              <TbPick size={58} strokeWidth={1.5} className="hidden drop-shadow-[3px_4px_0_rgba(0,0,0,0.4)] text-[#f0dfaa] sm:block" />
               <span className="absolute -right-3 -bottom-3 border-2 border-[#111a16] bg-[#8bc34a] px-2 py-1 text-[10px] font-black uppercase tracking-widest text-[#172315]">
                 API
               </span>
             </motion.div>
 
-            <div className="relative flex items-center justify-between border-t border-[#b5d58a]/20 pt-4 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#9aaf91]">
-              <span>Crafting table</span>
-              <span>01 / 01</span>
+            <div className="relative col-span-2 flex items-center justify-between border-t border-[#b5d58a]/20 pt-3 text-[9px] font-semibold uppercase tracking-[0.16em] text-[#9aaf91] sm:col-span-1 sm:pt-4 sm:text-[10px] sm:tracking-[0.18em]">
+              <span>Licença PluginsX</span>
+              <span>Slot 01 / 01</span>
             </div>
           </div>
 
-          <div className="flex min-w-0 flex-col justify-center p-5 sm:p-8 lg:p-12">
-            <p className="text-xs font-bold uppercase tracking-[0.24em] text-[#a6cf74]">
-              PluginsX · item especial
+          <div className="flex min-w-0 flex-col justify-center p-4 sm:p-8 lg:p-12">
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#a6cf74] sm:text-xs sm:tracking-[0.24em]">
+              SpawnerX · licença do servidor
             </p>
-            <h1 id="license-heading" className="font-minecraft-text mt-3 text-2xl font-black leading-tight tracking-tight sm:text-3xl lg:text-4xl">
-              Sua chave de acesso
+            <h1 id="license-heading" className="font-minecraft-text mt-2 text-2xl font-black leading-tight tracking-tight sm:mt-3 sm:text-3xl lg:text-4xl">
+              Acesso ao seu servidor
             </h1>
-            <p className="mt-3 max-w-md text-sm leading-6 text-[#b3c0ad]">
-              Gere a key e leve seu acesso no inventário. Se ela já existir, a
-              estação recupera a mesma para você.
+            <p className="mt-2 max-w-md text-[13px] leading-5 text-[#b3c0ad] sm:mt-3 sm:text-sm sm:leading-6">
+              Gere sua key para usar os plugins. Se já tiver uma, recuperamos a mesma para você.
             </p>
 
-            <div className="mt-7 grid grid-cols-3 gap-2" aria-hidden="true">
+            <div className="mt-5 grid grid-cols-3 gap-2 sm:mt-7" aria-hidden="true">
               {["#769a50", "#4e703a", "#769a50"].map((color, index) => (
                 <motion.div
                   key={index}
@@ -540,7 +584,7 @@ export function LicenseGenerator() {
               ))}
             </div>
 
-            <div className="mt-6 grid gap-3 sm:grid-cols-2">
+            <div className="mt-5 grid gap-3 min-[430px]:grid-cols-2 sm:mt-6 sm:grid-cols-2">
               <motion.div
                 whileHover={prefersReducedMotion ? undefined : { y: -2 }}
                 whileTap={{ scale: 0.98 }}
@@ -550,10 +594,10 @@ export function LicenseGenerator() {
                   variant="primary"
                   onPress={generateLicense}
                   isDisabled={isLoading}
-                  className="font-minecraft-text h-12 w-full rounded-lg border-b-4 border-[#345d2f] bg-[#5e9b43] font-bold text-[#f7ffe9] shadow-[0_5px_20px_rgba(71,134,55,0.2)] hover:bg-[#6eaa4d]"
+                  className="font-minecraft-text h-12 w-full whitespace-nowrap rounded-lg border-b-4 border-[#345d2f] bg-[#5e9b43] px-2 text-xs font-bold text-[#f7ffe9] shadow-[0_5px_20px_rgba(71,134,55,0.2)] hover:bg-[#6eaa4d] sm:px-4 sm:text-sm"
                 >
                   <TbPick size={19} aria-hidden="true" />
-                  {isLoading ? "Verificando inventário..." : "Gerar minha key"}
+                  {isLoading ? "Verificando..." : "Gerar minha key"}
                 </Button>
               </motion.div>
 
@@ -566,8 +610,8 @@ export function LicenseGenerator() {
                   size="lg"
                   variant="primary"
                   onPress={generatePremiumLicense}
-                  isDisabled={isPremiumLoading || isPremiumStatusLoading || isSessionPending}
-                  className="font-minecraft-text relative h-12 w-full overflow-hidden rounded-lg border-b-4 border-[#581c87] bg-[#6d28d9] font-bold text-white shadow-[0_5px_24px_rgba(147,51,234,0.38)] hover:bg-[#7c3aed]"
+                  isDisabled={isPremiumLoading || isPremiumStatusLoading || !isSessionReady}
+                  className="font-minecraft-text relative h-12 w-full whitespace-nowrap overflow-hidden rounded-lg border-b-4 border-[#581c87] bg-[#6d28d9] px-2 text-xs font-bold text-white shadow-[0_5px_24px_rgba(147,51,234,0.38)] hover:bg-[#7c3aed] sm:px-4 sm:text-sm"
                 >
                   <motion.span
                     aria-hidden="true"
@@ -602,12 +646,12 @@ export function LicenseGenerator() {
                   <span className="relative z-20">
                     {isPremiumLoading
                       ? "Abrindo portal..."
-                      : isSessionPending
-                        ? "Verificando conta..."
+                      : !isSessionReady
+                        ? "Aguarde..."
                         : isPremiumStatusLoading
-                          ? "Consultando key..."
+                          ? "Verificando..."
                         : premiumLicense
-                          ? "Ver minha key premium"
+                          ? "Ver key premium"
                           : "Gerar key premium"}
                   </span>
                 </Button>
@@ -648,7 +692,7 @@ export function LicenseGenerator() {
               </div>
             )}
 
-            {premiumLicense && session && (
+            {premiumLicense && isSessionReady && session && (
               <motion.div
                 initial={prefersReducedMotion ? false : { opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -747,10 +791,30 @@ export function AmbientMusic() {
       />
 
       <motion.aside
+        initial={prefersReducedMotion ? false : { opacity: 0, x: -8 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: prefersReducedMotion ? 0 : 0.35 }}
+        className="fixed left-2 top-2 z-50 sm:hidden"
+        aria-label="Música ambiente"
+      >
+        <Button
+          isIconOnly
+          size="md"
+          variant="ghost"
+          onPress={toggleMusic}
+          aria-label={isPlaying ? "Pausar música ambiente" : "Tocar música ambiente"}
+          title={isPlaying ? "Pausar música" : "Tocar música"}
+          className="size-11 min-w-11 rounded-xl border border-[#a6cf74]/25 bg-black/80 text-[#c6e5a7] shadow-[0_10px_35px_rgba(0,0,0,0.45)] backdrop-blur-xl hover:border-[#a6cf74]/50 hover:bg-black"
+        >
+          {isPlaying ? <TbPlayerPause size={18} aria-hidden="true" /> : <TbPlayerPlay size={18} aria-hidden="true" />}
+        </Button>
+      </motion.aside>
+
+      <motion.aside
         initial={prefersReducedMotion ? false : { opacity: 0, x: -14 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: prefersReducedMotion ? 0 : 0.4 }}
-        className="fixed left-2 top-2 z-50 sm:left-5 sm:top-5"
+        className="fixed left-2 top-2 z-50 hidden sm:left-5 sm:top-5 sm:block"
         aria-label="Música ambiente"
       >
         <motion.div

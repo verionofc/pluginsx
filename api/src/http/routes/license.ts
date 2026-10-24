@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { License } from "../../database/models/License.js";
 import { authSessionPlugin } from "../plugins/better-auth.js";
+import { getPaidPlan, hasPremiumAccess, hasTrustedWebOrigin } from "../plugins/plan-access.js";
 import {
   generate as generateLicense,
   generatePremiumForAccount,
@@ -112,6 +113,7 @@ export const licenseRoutes = new Elysia({ prefix: "/license" })
       if (!license) return { code: null, tier: "plus" as const, valid: false };
 
       const view = await viewLicense(license._id);
+      if (!view.valid || !(await hasPremiumAccess(user.id))) return { code: null, tier: "plus" as const, valid: false };
       return {
         code: view.valid ? license._id : null,
         tier: "plus" as const,
@@ -155,8 +157,11 @@ export const licenseRoutes = new Elysia({ prefix: "/license" })
   )
   .post(
     "/premium/generate",
-    async ({ user }) => {
-      const generated = await generatePremiumForAccount(user.id);
+    async ({ user, status, request }) => {
+      if (!hasTrustedWebOrigin(request)) return status(403, { code: "ORIGIN_FORBIDDEN", message: "Origem da solicitação não permitida." });
+      const paidPlan = await getPaidPlan(user.id);
+      if (!paidPlan) return status(403, { code: "PLAN_REQUIRED", message: "Contrate um plano Premium para gerar uma key Plus.", redirectTo: "/plans?returnTo=%2F#license" });
+      const generated = await generatePremiumForAccount(user.id, paidPlan);
       const licenseView = await viewLicense(generated.code);
 
       return {
@@ -180,6 +185,7 @@ export const licenseRoutes = new Elysia({ prefix: "/license" })
           created: z.boolean(),
         }),
         401: z.object({ code: z.string(), message: z.string() }),
+        403: z.object({ code: z.string(), message: z.string(), redirectTo: z.string().optional() }),
       },
     },
   )

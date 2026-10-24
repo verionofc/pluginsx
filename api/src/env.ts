@@ -14,6 +14,10 @@ const envSchema = z.object({
 
   MONGODB_URI: z.string().startsWith("mongodb+srv://"),
   MONGODB_DB_NAME: z.string(),
+  MERCADOPAGO_ACCESS_TOKEN: z.string().optional(),
+  MERCADOPAGO_WEBHOOK_SECRET: z.string().optional(),
+  NEXT_PUBLIC_APP_URL: z.string().url().optional(),
+  TEMP_LICENSE_TRIAL_ENABLED: z.string().default("false").transform((value) => value.trim().toLowerCase() === "true"),
 });
 
 export const env = envSchema.parse(process.env);

@@ -5,9 +5,12 @@ import { useState } from "react";
 import { TbLoader2, TbLogout2, TbUserCircle } from "react-icons/tb";
 
 import { authClient } from "@/lib/auth-client";
+import { useHydrated } from "@/hooks/useHydrated";
 
 export function AccountNav() {
   const { data: session, isPending } = authClient.useSession();
+  const hasHydrated = useHydrated();
+  const isSessionReady = hasHydrated && !isPending;
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [error, setError] = useState("");
 
@@ -26,7 +29,7 @@ export function AccountNav() {
 
   return (
     <div className="fixed right-3 top-3 z-50 flex max-w-[calc(100vw-1.5rem)] items-center gap-2 sm:right-5 sm:top-5">
-      {session ? (
+      {isSessionReady && session ? (
         <>
           <Link
             href="/account"
@@ -66,10 +69,10 @@ export function AccountNav() {
       ) : (
         <Link
           href="/account"
-          aria-busy={isPending}
+          aria-busy={!isSessionReady}
           className="font-minecraft-text inline-flex min-h-11 items-center gap-2 rounded-xl border border-[#a6cf74]/35 bg-[#a6cf74] px-4 text-xs font-bold text-[#14200f] shadow-[0_8px_30px_rgba(0,0,0,0.35)] transition hover:bg-[#c0e29d]"
         >
-          {isPending ? (
+          {!isSessionReady ? (
             <TbLoader2 className="size-4 animate-spin" aria-hidden="true" />
           ) : (
             <TbUserCircle className="size-4" aria-hidden="true" />

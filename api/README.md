@@ -80,3 +80,64 @@ API responde `401`.
 O SpawnerX consulta `GET /license/tier?key={chave}` para validar a licença e
 identificar se ela libera recursos `default` ou `plus`. O endpoint `/license/verify`
 continua disponível para clientes que só precisam saber se a chave é válida.
+
+
+## Planos e pagamentos
+
+O site expõe `/plans`; os endpoints `/billing/*` são autenticados pelo mesmo
+Better Auth e persistem acesso, compras e notificações no MongoDB/Mongoose.
+Os preços do catálogo e do checkout são definidos somente na API: R$ 12,53 por
+mês e R$ 63,04 no Lifetime. O endpoint de checkout recebe apenas o identificador
+do plano; valores enviados pelo navegador não são aceitos como autoridade.
+
+Configure no ambiente privado da API:
+
+```dotenv
+MERCADOPAGO_ACCESS_TOKEN=APP_USR-... # ou credencial de teste no ambiente sandbox
+MERCADOPAGO_WEBHOOK_SECRET=...
+NEXT_PUBLIC_APP_URL=https://pluginsx.vercel.app
+TEMP_LICENSE_TRIAL_ENABLED=false
+```
+
+O teste de licença temporária vem desativado. Para exibir o cartão de teste em
+`/plans`, defina `TEMP_LICENSE_TRIAL_ENABLED=true` no ambiente da API e reinicie
+o serviço. O endpoint autenticado `/billing/trial` gera uma key Plus sem
+`ownerId`, válida por 12 horas. A key fica salva no armazenamento local do
+navegador e pode ser recuperada pela própria conta enquanto estiver válida. O
+código de recuperação fica associado ao estado da conta somente durante a janela
+de 12 horas; ao expirar, a API deixa de retorná-lo e remove o código salvo. A
+licença não recebe `ownerId`, e uma segunda emissão é bloqueada mesmo após a
+expiração. O MongoDB remove a licença expirada por TTL.
+Para ocultar o teste, volte a variável para `false` e reinicie a API.
+
+Use credenciais de teste em implantação de sandbox e credenciais de produção
+somente no deployment de produção. Nunca configure o Access Token como variável
+`NEXT_PUBLIC_*` no website. No painel do Mercado Pago, cadastre a URL
+`${URL}/billing/webhook` como destino e habilite os tópicos `payment`,
+`subscription_preapproval`, `subscription_authorized_payment` e
+`topic_chargebacks_wh`. O Mercado Pago documenta que cobranças recorrentes
+precisam dos tópicos de pagamento e de fatura autorizada; consulte a
+[documentação oficial de Webhooks de assinaturas](https://www.mercadopago.com.br/developers/pt/docs/subscriptions/additional-content/your-integrations/notifications/webhooks)
+e a [referência da API de faturas](https://www.mercadopago.com.br/developers/pt/reference/online-payments/subscriptions/get-authorized-payment/get).
+O endpoint verifica `x-signature` e `x-request-id` com o validador do SDK oficial,
+consulta o recurso diretamente na API do Mercado Pago e persiste deduplicação no
+MongoDB. O retorno de checkout só apresenta o estado consultado no backend; não
+concede acesso. Rode `bun run test` para os testes de configuração de preço,
+retorno seguro e validação de assinatura HMAC.
+
+Endpoints de gerenciamento:
+
+```text
+GET  /billing/catalog
+GET  /billing/state                 # requer sessão
+POST /billing/trial                 # requer sessão; opcional; key temporária de 12h
+POST /billing/checkout              # requer sessão; { "plan": "monthly" | "lifetime" }
+POST /billing/cancel                # requer sessão; cancela a renovação mensal
+POST /billing/webhook               # validação de assinatura do Mercado Pago
+GET  /billing/purchase/{reference}  # requer sessão e propriedade da compra
+```
+
+Keys Plus são autorizadas pela existência de um plano mensal válido ou Lifetime
+ativo. Essa mesma regra alimenta a validação pública da key, inclusive após o
+vencimento ou reembolso/contestação. Cancelar uma assinatura mantém o acesso até
+o fim do período registrado como pago.

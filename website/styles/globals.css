@@ -3,17 +3,8 @@
 
 @import "./themes/index.css";
 
-@font-face {
-  font-family: "Minecraft Text";
-  src: url("https://cdn.jsdelivr.net/gh/aaronpinero/minecraft-fonts@main/dist/minecraft-text/minecraft-text.woff2")
-    format("woff2");
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-}
-
 .font-minecraft-text {
-  font-family: "Minecraft Text", sans-serif;
+  font-family: var(--font-minecraft), Arial, Helvetica, sans-serif;
 }
 
 html,
@@ -89,5 +80,41 @@ body {
     scrollbar-width: thin;
     scrollbar-color: color-mix(in srgb, var(--primary) 30%, transparent)
       transparent;
+  }
+}
+
+@keyframes chunk-loading-block {
+  0%,
+  100% {
+    filter: brightness(0.68);
+    transform: translateY(0);
+  }
+  50% {
+    filter: brightness(1.22);
+    transform: translateY(-2px);
+  }
+}
+
+@keyframes chunk-loading-scan {
+  from {
+    transform: translateX(-115%);
+  }
+  to {
+    transform: translateX(330%);
+  }
+}
+
+.chunk-loading-block {
+  animation: chunk-loading-block 1.3s steps(2, end) infinite;
+}
+
+.chunk-loading-scan {
+  animation: chunk-loading-scan 1.9s steps(8, end) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chunk-loading-block,
+  .chunk-loading-scan {
+    animation: none;
   }
 }

@@ -25,3 +25,10 @@ Cadastre `${URL}/auth/callback/github` como callback OAuth do GitHub, usando a m
 bun run lint
 bun run build
 ```
+
+
+A página `/plans` consulta o catálogo e o estado financeiro na API. O checkout,
+o teste de licença temporária opcional e o cancelamento mensal são processados
+no backend; uma URL de retorno do Mercado Pago não confirma o pagamento. Configure as credenciais do
+Mercado Pago somente na API conforme `api/.env.example` e cadastre
+`${URL}/billing/webhook` no painel do Mercado Pago.

@@ -1,5 +1,7 @@
 import { License } from "../../database/models/License.js";
+import { hasPremiumAccess } from "./plan-access.js";
 import { v3 as uuidv3 } from "uuid";
+import { randomUUID } from "node:crypto";
 
 export type TierType = "default" | "plus";
 export type LicenseView = {
@@ -52,12 +54,17 @@ export async function generate(ownerId: string, tier: TierType): Promise<string>
 
 export async function generatePremiumForAccount(
   ownerId: string,
+  sourcePlan: "monthly" | "lifetime",
 ): Promise<{ code: string; created: boolean }> {
   const existing = await License.findOne({ ownerId })
     .select({ _id: 1 })
     .lean();
 
-  if (existing) return { code: existing._id, created: false };
+  if (existing) {
+    // Keep the account license in sync when its owner changes billing plans.
+    await License.updateOne({ _id: existing._id }, { $set: { sourcePlan } });
+    return { code: existing._id, created: false };
+  }
 
   for (let attempt = 0; attempt < 10; attempt += 1) {
     const code = `plus_${createUuidBody(ownerId, "plus", attempt)}`;
@@ -66,6 +73,7 @@ export async function generatePremiumForAccount(
       await License.create({
         _id: code,
         ownerId,
+        sourcePlan,
         value: {
           tier: "plus",
           valid: true,
@@ -86,6 +94,24 @@ export async function generatePremiumForAccount(
   throw new Error("Unable to generate a unique premium license code.");
 }
 
+export async function generateTemporaryPremiumLicense(expiresAt: Date): Promise<string> {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const code = `plus_${randomUUID()}`;
+    try {
+      await License.create({
+        _id: code,
+        sourcePlan: "trial",
+        expiresAt,
+        value: { tier: "plus", valid: true },
+      });
+      return code;
+    } catch (error) {
+      if (!isDuplicateKeyError(error)) throw error;
+    }
+  }
+  throw new Error("Unable to generate a unique temporary license code.");
+}
+
 export async function view(license_key: string): Promise<LicenseView> {
   const key = license_key.trim();
   if (!key) {
@@ -96,6 +122,15 @@ export async function view(license_key: string): Promise<LicenseView> {
 
   if (!license) {
     return { valid: false };
+  }
+
+  if (license.expiresAt && license.expiresAt.getTime() <= Date.now()) {
+    await License.deleteOne({ _id: key, expiresAt: { $lte: new Date() } });
+    return { valid: false, type: "pluginsx_license", value: { tier: license.value.tier, valid: false } };
+  }
+
+  if (license.value.tier === "plus" && license.ownerId && !(await hasPremiumAccess(license.ownerId))) {
+    return { valid: false, type: "pluginsx_license", value: { tier: "plus", valid: false } };
   }
 
   return {

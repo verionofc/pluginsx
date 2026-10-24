@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   TbArrowLeft,
   TbBrandGithub,
@@ -17,16 +17,29 @@ import {
 } from "react-icons/tb";
 
 import { apiUrl, authClient } from "@/lib/auth-client";
+import { SiteLoadingScreen } from "@/components/ui/SiteLoadingScreen";
+import { useLoadingDelay } from "@/hooks/useLoadingDelay";
+import { useHydrated } from "@/hooks/useHydrated";
 
 type ServerActivation = {
   id: string; serverId: string; name: string; minecraftVersion: string;
   implementation: string; implementationVersion: string; pluginVersion: string;
   state: string; createdAt: string; lastValidatedAt: string | null; connection: string;
 };
-type AccountLicense = { id: string; tier: string; valid: boolean; used: number; limit: number; servers: ServerActivation[] };
+type AccountLicense = { id: string; tier: string; valid: boolean; plan: "trial" | "monthly" | "lifetime" | null; expiresAt?: string | null; used: number; limit: number; servers: ServerActivation[] };
 
-function LicensesPanel() {
+const formatTrialCountdown = (seconds: number) => {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainingSeconds = seconds % 60;
+  return [hours, minutes, remainingSeconds]
+    .map((part) => String(part).padStart(2, "0"))
+    .join(":");
+};
+
+function LicensesPanel({ onInitialReady }: { onInitialReady: () => void }) {
   const [licenses, setLicenses] = useState<AccountLicense[]>([]);
+  const [clockNow, setClockNow] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState("");
@@ -42,9 +55,16 @@ function LicensesPanel() {
       }
       setLicenses(await response.json());
     } catch (error) { setMessage(error instanceof Error ? error.message : "Falha ao carregar licenças."); }
-    finally { setLoading(false); }
+    finally { setLoading(false); onInitialReady(); }
   };
   useEffect(() => { void refresh(); }, []);
+  useEffect(() => {
+    if (!licenses.some((license) => license.plan === "trial" && license.expiresAt)) return;
+    const updateClock = () => setClockNow(Date.now());
+    updateClock();
+    const interval = window.setInterval(updateClock, 1000);
+    return () => window.clearInterval(interval);
+  }, [licenses]);
   async function act(server: ServerActivation, action: "approve" | "reject" | "remove" | "delete") {
     const prompt = action === "delete"
       ? `Apagar o registro antigo de ${server.name}? Esta ação não pode ser desfeita.`
@@ -65,9 +85,17 @@ function LicensesPanel() {
   return <section className="mt-8" aria-labelledby="licenses-title">
     <div className="mb-4"><p className="font-minecraft-text text-xs font-bold uppercase tracking-[0.16em] text-[#b4d991]">Licenciamento</p><h3 id="licenses-title" className="mt-1 text-xl font-bold text-white">Licenças e servidores</h3></div>
     {message && <p role="status" className="mb-4 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/80">{message}</p>}
-    {loading ? <p className="text-sm text-white/50">Carregando licenças…</p> : licenses.length === 0 ? <p className="text-sm text-white/50">Nenhuma licença vinculada a esta conta.</p> : <div className="grid gap-4">{licenses.map((license) => <article key={license.id} className="rounded-2xl border border-white/10 bg-black/20 p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3"><div><h4 className="font-bold text-white">SpawnerX {license.tier === "plus" ? "Plus" : "Standard"}</h4><p className="mt-1 break-all font-mono text-xs text-white/45">{visibleKeys[license.id] ? license.id : `••••••••••••${license.id.slice(-4)}`}</p></div><div className="flex gap-2"><button type="button" aria-label={visibleKeys[license.id] ? "Ocultar key" : "Mostrar key"} aria-pressed={Boolean(visibleKeys[license.id])} onClick={() => setVisibleKeys((keys) => ({ ...keys, [license.id]: !keys[license.id] }))} className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-xs text-white/70 hover:bg-white/10">{visibleKeys[license.id] ? <TbEyeOff aria-hidden="true" className="size-4" /> : <TbEye aria-hidden="true" className="size-4" />}{visibleKeys[license.id] ? "Ocultar key" : "Mostrar key"}</button><button type="button" onClick={() => void navigator.clipboard.writeText(license.id)} className="rounded-lg border border-white/10 px-3 py-2 text-xs text-white/70 hover:bg-white/10">Copiar key</button></div></div>
-      <p className="mt-3 text-sm text-[#c2e3a0]">{license.valid ? "Licença válida" : "Licença inválida"} · {license.used}/{license.limit} servidores utilizados</p>
+    {loading ? <p className="text-sm text-white/50">Carregando licenças…</p> : licenses.length === 0 ? <p className="text-sm text-white/50">Nenhuma licença vinculada a esta conta.</p> : <div className="grid gap-4">{licenses.map((license) => {
+      const trialExpired = license.plan === "trial" && Boolean(license.expiresAt) && clockNow !== null && Date.parse(license.expiresAt!) <= clockNow;
+      const keyVisible = Boolean(visibleKeys[license.id]) && !trialExpired;
+      return <article key={license.id} className="rounded-2xl border border-white/10 bg-black/20 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3"><div><h4 className="font-bold text-white">SpawnerX {license.plan === "trial" ? "Trial temporário" : license.plan === "lifetime" ? "Ender Dragon" : license.plan === "monthly" ? "Creeper" : license.tier === "plus" ? "Plus" : "Standard"}</h4><p className="mt-1 break-all font-mono text-xs text-white/45">{trialExpired ? "Key temporária expirada" : keyVisible ? license.id : `••••••••••••${license.id.slice(-4)}`}</p></div><div className="flex gap-2"><button type="button" disabled={trialExpired} aria-label={keyVisible ? "Ocultar key" : trialExpired ? "Key expirada" : "Mostrar key"} aria-pressed={keyVisible} onClick={() => setVisibleKeys((keys) => ({ ...keys, [license.id]: !keys[license.id] }))} className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-xs text-white/70 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40">{keyVisible ? <TbEyeOff aria-hidden="true" className="size-4" /> : <TbEye aria-hidden="true" className="size-4" />}{keyVisible ? "Ocultar key" : trialExpired ? "Expirada" : "Mostrar key"}</button><button type="button" disabled={trialExpired} onClick={() => void navigator.clipboard.writeText(license.id)} className="rounded-lg border border-white/10 px-3 py-2 text-xs text-white/70 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40">Copiar key</button></div></div>
+      <p className="mt-3 text-sm text-[#c2e3a0]">{trialExpired ? "Trial expirado" : license.valid ? "Licença válida" : "Licença inválida"} · {license.used}/{license.limit} servidores utilizados</p>
+      {license.plan === "trial" && license.expiresAt && <p role="timer" aria-live="off" className="mt-2 font-mono text-xs text-amber-200/85">
+        {clockNow === null ? "Calculando tempo restante…" : trialExpired
+          ? "Trial expirado"
+          : `Tempo até expirar: ${formatTrialCountdown(Math.ceil((Date.parse(license.expiresAt) - clockNow) / 1000))}`}
+      </p>}
       <div className="mt-3 grid gap-3">{license.servers.map((server) => <div key={server.id} className="rounded-xl border border-white/8 bg-white/[0.025] p-3">
         <div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-sm text-white">{server.name}</strong><span className="rounded-full border border-[#a6cf74]/20 bg-[#a6cf74]/10 px-2.5 py-1 text-xs text-[#c2e3a0]">{label[server.state] ?? server.state}</span></div>
         <p className="mt-2 break-all font-mono text-[11px] text-white/40">ID {server.serverId}</p><p className="mt-1 text-xs text-white/55">Minecraft {server.minecraftVersion} · {server.implementation} {server.implementationVersion} · SpawnerX {server.pluginVersion}</p>
@@ -76,16 +104,22 @@ function LicensesPanel() {
         {["PENDING", "ACTIVE"].includes(server.state) && <button disabled={busy === server.id} onClick={() => void act(server, "remove")} className="mt-3 rounded-lg border border-red-200/15 px-3 py-2 text-xs text-red-100/80 disabled:opacity-50">Remover servidor</button>}
         {["REVOKED", "REJECTED", "EXPIRED", "ERROR", "INACTIVE"].includes(server.state) && <button disabled={busy === server.id} onClick={() => void act(server, "delete")} className="mt-3 rounded-lg border border-white/10 px-3 py-2 text-xs text-white/55 hover:bg-white/5 disabled:opacity-50">Apagar registro antigo</button>}
       </div>)}</div>
-    </article>)}</div>}
+    </article>})}</div>}
   </section>;
 }
 
 export function AccountPage() {
   const { data: session, isPending } = authClient.useSession();
+  const hasHydrated = useHydrated();
+  const isSessionReady = hasHydrated && !isPending;
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [error, setError] = useState("");
   const [premiumWarning, setPremiumWarning] = useState(false);
+  const [licensesReady, setLicensesReady] = useState(false);
+  const markLicensesReady = useCallback(() => setLicensesReady(true), []);
+  const isPageLoading = !isSessionReady || (Boolean(session) && !licensesReady);
+  const showLoading = useLoadingDelay(isPageLoading);
 
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("notice") !== "premium-key") return;
@@ -104,10 +138,15 @@ export function AccountPage() {
     setIsSigningIn(true);
     setError("");
 
+    const requestedReturn = new URLSearchParams(window.location.search).get("returnTo");
+    const returnTo = requestedReturn?.startsWith("/") && !requestedReturn.startsWith("//") && !requestedReturn.includes("\\")
+      ? requestedReturn
+      : "/account";
+
     try {
       const result = await authClient.signIn.social({
         provider: "github",
-        callbackURL: `${window.location.origin}/account`,
+        callbackURL: `${window.location.origin}${returnTo}`,
       });
 
       if (result.error) {
@@ -140,7 +179,9 @@ export function AccountPage() {
   }
 
   return (
-    <main className="relative z-10 flex min-h-dvh items-center justify-center px-3 py-20 sm:px-6 sm:py-24">
+    <>
+    {showLoading && <SiteLoadingScreen detail="Carregando seu perfil, licenças e servidores vinculados." stage="PERFIL · LICENÇAS · SERVIDORES" />}
+    <main aria-hidden={showLoading} className={`relative z-10 flex min-h-dvh items-center justify-center px-3 py-20 sm:px-6 sm:py-24 ${showLoading ? "invisible" : ""}`}>
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 overflow-hidden"
@@ -218,7 +259,7 @@ export function AccountPage() {
           </aside>
 
           <div className="flex flex-col justify-center p-5 sm:p-9 md:p-12">
-            {isPending ? (
+            {!isSessionReady ? (
               <output
                 className="flex min-h-80 flex-col items-center justify-center text-center"
                 aria-live="polite"
@@ -314,7 +355,7 @@ export function AccountPage() {
                     Sair da conta
                   </button>
                 </div>
-                <LicensesPanel />
+                <LicensesPanel onInitialReady={markLicensesReady} />
               </div>
             ) : (
               <div className="mx-auto w-full max-w-md">
@@ -388,5 +429,6 @@ export function AccountPage() {
         </div>
       </section>
     </main>
+    </>
   );
 }
