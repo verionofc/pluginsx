@@ -803,7 +803,6 @@ export function AmbientMusic() {
           variant="ghost"
           onPress={toggleMusic}
           aria-label={isPlaying ? "Pausar música ambiente" : "Tocar música ambiente"}
-          title={isPlaying ? "Pausar música" : "Tocar música"}
           className="size-11 min-w-11 rounded-xl border border-[#a6cf74]/25 bg-black/80 text-[#c6e5a7] shadow-[0_10px_35px_rgba(0,0,0,0.45)] backdrop-blur-xl hover:border-[#a6cf74]/50 hover:bg-black"
         >
           {isPlaying ? <TbPlayerPause size={18} aria-hidden="true" /> : <TbPlayerPlay size={18} aria-hidden="true" />}
