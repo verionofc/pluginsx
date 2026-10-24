@@ -1,11 +1,13 @@
-import type { Metadata } from "next";
-
 import { PanelPage } from "@/components/pages/PanelPage";
+import { createPageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
+export const metadata = createPageMetadata({
   title: "Painel do proprietário",
-  description: "Vendas, mensalidades e gerenciamento de planos PluginsX.",
-};
+  description:
+    "Área privada para acompanhar vendas, pagamentos, receita e acessos da operação PluginsX.",
+  path: "/panel",
+  privatePage: true,
+});
 
 export default function Page() {
   return <PanelPage />;

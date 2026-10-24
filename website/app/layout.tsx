@@ -7,6 +7,7 @@ import { AccountNav } from "@/components/ui/AccountNav";
 import { MiniFooter } from "@/components/ui/MiniFooter";
 import { settings } from "@/lib";
 import { DefaultProviders } from "@/lib/providers";
+import { openGraphImageAlt, openGraphImagePath, siteOrigin } from "@/lib/seo";
 
 const monocraft = localFont({
   src: [
@@ -18,13 +19,47 @@ const monocraft = localFont({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(siteOrigin),
   title: {
-    default: "PluginsX",
-    template: "PluginsX | %s",
+    default: "PluginsX — seu servidor, suas regras",
+    template: "%s | PluginsX",
   },
-  description: "Plugins e ferramentas do projeto PluginsX.",
+  description:
+    "Plugins, licenças e ferramentas PaperMC para quem constrói e mantém os próprios mundos.",
   authors: [{ name: settings.author, url: settings.links.github }],
   creator: settings.author,
+  alternates: { canonical: "/" },
+  openGraph: {
+    type: "website",
+    locale: "pt_BR",
+    siteName: "PluginsX",
+    title: "PluginsX — seu servidor, suas regras",
+    description:
+      "Plugins, licenças e ferramentas PaperMC para quem constrói e mantém os próprios mundos.",
+    url: "/",
+    images: [
+      {
+        url: openGraphImagePath,
+        width: 1200,
+        height: 630,
+        alt: openGraphImageAlt,
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "PluginsX — seu servidor, suas regras",
+    description:
+      "Plugins, licenças e ferramentas PaperMC para quem constrói e mantém os próprios mundos.",
+    images: [
+      {
+        url: openGraphImagePath,
+        width: 1200,
+        height: 630,
+        alt: openGraphImageAlt,
+      },
+    ],
+  },
   icons: {
     icon: "/favicon.ico",
   },

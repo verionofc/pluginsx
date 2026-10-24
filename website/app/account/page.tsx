@@ -1,11 +1,13 @@
-import type { Metadata } from "next";
-
 import { AccountPage } from "@/components/pages/AccountPage";
+import { createPageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
+export const metadata = createPageMetadata({
   title: "Central de Mundos",
-  description: "Gerencie suas licenças e os servidores conectados ao PluginsX.",
-};
+  description:
+    "Consulte suas licenças, keys e servidores conectados em um só lugar.",
+  path: "/account",
+  privatePage: true,
+});
 
 export default function Page() {
   return <AccountPage />;

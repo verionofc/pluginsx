@@ -1,11 +1,13 @@
-import type { Metadata } from "next";
-
 import { CartPage } from "@/components/pages/CartPage";
+import { createPageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
+export const metadata = createPageMetadata({
   title: "Carrinho",
-  description: "Revise seus planos e vagas extras antes de finalizar a compra.",
-};
+  description:
+    "Revise os planos e limites de servidores escolhidos antes de seguir para o pagamento.",
+  path: "/cart",
+  privatePage: true,
+});
 
 export default function Page() {
   return <CartPage />;
