@@ -6,6 +6,7 @@ import { MercadoPagoConfig, PreApproval } from "mercadopago";
 import { OWNER_ROLE } from "../../config/roles.js";
 import { AdminAuditLog } from "../../database/models/AdminAuditLog.js";
 import { BillingTransaction } from "../../database/models/BillingTransaction.js";
+import { Coupon } from "../../database/models/Coupon.js";
 import { PaymentEvent } from "../../database/models/PaymentEvent.js";
 import { PlanAccess } from "../../database/models/PlanAccess.js";
 import { PlanPurchase } from "../../database/models/PlanPurchase.js";
@@ -133,6 +134,71 @@ const updateAccessSchema = z.object({
   }
 });
 
+const couponBodySchema = z.object({
+  code: z.string().trim().toUpperCase().regex(/^[A-Z0-9_-]+$/).min(3).max(32),
+  products: z.array(z.enum(["monthly", "lifetime", "aether", "server_slots"])).min(1),
+  discountType: z.enum(["percentage", "fixed"]),
+  discountValue: z.number().min(0.01).max(1_000_000),
+  usageMode: z.enum(["single", "multi", "per_account"]),
+  maxUses: z.number().int().positive().nullable(),
+  maxPerAccount: z.number().int().positive().nullable(),
+  startsAt: z.string().datetime().nullable(),
+  expiresAt: z.string().datetime().nullable(),
+}).superRefine((value, context) => {
+  if (value.discountType === "percentage" && value.discountValue >= 100) {
+    context.addIssue({ code: "custom", path: ["discountValue"], message: "O desconto percentual precisa ser menor que 100%." });
+  }
+  if (value.usageMode === "per_account" && value.maxPerAccount === null) {
+    context.addIssue({ code: "custom", path: ["maxPerAccount"], message: "Defina quantas vezes cada conta pode usar o cupom." });
+  }
+  if (value.usageMode !== "per_account" && value.maxPerAccount !== null) {
+    context.addIssue({ code: "custom", path: ["maxPerAccount"], message: "O limite por conta só vale no modo de uso por conta." });
+  }
+  if (value.usageMode === "per_account" && !value.expiresAt) {
+    context.addIssue({ code: "custom", path: ["expiresAt"], message: "Cupons por conta precisam de uma data de encerramento." });
+  }
+  if (value.usageMode === "single" && value.maxUses !== null && value.maxUses !== 1) {
+    context.addIssue({ code: "custom", path: ["maxUses"], message: "Um cupom de uso único tem limite global de um resgate." });
+  }
+  if (value.startsAt && value.expiresAt && Date.parse(value.expiresAt) <= Date.parse(value.startsAt)) {
+    context.addIssue({ code: "custom", path: ["expiresAt"], message: "O encerramento precisa ocorrer depois do início." });
+  }
+});
+
+function couponSummary(coupon: {
+  _id: unknown;
+  code: string;
+  products: string[];
+  discountType: string;
+  discountValue: number;
+  usageMode: string;
+  maxUses: number | null;
+  maxPerAccount: number | null;
+  startsAt?: Date | null;
+  expiresAt?: Date | null;
+  isActive: boolean;
+  usageCount: number;
+  reservedCount: number;
+  createdAt: Date;
+}) {
+  return {
+    id: String(coupon._id),
+    code: coupon.code,
+    products: coupon.products,
+    discountType: coupon.discountType,
+    discountValue: coupon.discountValue,
+    usageMode: coupon.usageMode,
+    maxUses: coupon.maxUses,
+    maxPerAccount: coupon.maxPerAccount,
+    startsAt: coupon.startsAt ?? null,
+    expiresAt: coupon.expiresAt ?? null,
+    isActive: coupon.isActive,
+    usageCount: coupon.usageCount,
+    reservedCount: coupon.reservedCount,
+    createdAt: coupon.createdAt,
+  };
+}
+
 const getMercadoPagoClient = () => {
   if (!env.MERCADOPAGO_ACCESS_TOKEN) throw new Error("Mercado Pago is not configured");
   return new MercadoPagoConfig({ accessToken: env.MERCADOPAGO_ACCESS_TOKEN });
@@ -140,6 +206,43 @@ const getMercadoPagoClient = () => {
 
 export const panelRoutes = new Elysia({ prefix: "/panel" })
   .use(authSessionPlugin)
+  .get("/coupons", async () => {
+    const coupons = await Coupon.find().sort({ createdAt: -1 }).lean();
+    return { items: coupons.map(couponSummary) };
+  }, { owner: true, detail: { summary: "List purchase coupons", tags: ["Panel"] } })
+  .post("/coupons", async ({ user, body, status, request }) => {
+    if (!hasTrustedWebOrigin(request)) return status(403, { message: "Origem da solicitação não permitida." });
+    try {
+      const coupon = await Coupon.create({
+        ...body,
+        maxUses: body.usageMode === "single" ? 1 : body.maxUses,
+        maxPerAccount: body.usageMode === "per_account" ? body.maxPerAccount : null,
+        startsAt: body.startsAt ? new Date(body.startsAt) : null,
+        expiresAt: body.expiresAt ? new Date(body.expiresAt) : null,
+        monthlyRecurring: true,
+        isActive: true,
+        createdBy: user.id,
+      });
+      return couponSummary(coupon.toObject());
+    } catch (error) {
+      if (error && typeof error === "object" && "code" in error && error.code === 11000) {
+        return status(409, { code: "COUPON_CODE_EXISTS", message: "Já existe um cupom com esse código." });
+      }
+      throw error;
+    }
+  }, { owner: true, body: couponBodySchema, detail: { summary: "Create a purchase coupon", tags: ["Panel"] } })
+  .post("/coupons/:id/active", async ({ params, body, status, request }) => {
+    if (!hasTrustedWebOrigin(request)) return status(403, { message: "Origem da solicitação não permitida." });
+    if (!mongoose.isValidObjectId(params.id)) return status(404, { message: "Cupom não encontrado." });
+    const coupon = await Coupon.findByIdAndUpdate(params.id, { $set: { isActive: body.active } }, { new: true }).lean();
+    if (!coupon) return status(404, { message: "Cupom não encontrado." });
+    return couponSummary(coupon);
+  }, {
+    owner: true,
+    params: z.object({ id: z.string().min(1).max(64) }),
+    body: z.object({ active: z.boolean() }),
+    detail: { summary: "Activate or deactivate a purchase coupon", tags: ["Panel"] },
+  })
   .get("/dashboard", async () => {
     const now = new Date();
     const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
@@ -268,7 +371,7 @@ export const panelRoutes = new Elysia({ prefix: "/panel" })
     const offset = Math.max(Number(query.offset ?? 0), 0);
     const [transactions, total] = await Promise.all([
       BillingTransaction.find().sort({ paidAt: -1, createdAt: -1 }).skip(offset).limit(limit)
-        .select({ userId: 1, purchaseReference: 1, plan: 1, serverSlots: 1, amount: 1, currency: 1, status: 1, paidAt: 1, createdAt: 1 })
+        .select({ userId: 1, purchaseReference: 1, plan: 1, serverSlots: 1, amount: 1, discountAmount: 1, couponCode: 1, currency: 1, status: 1, paidAt: 1, createdAt: 1 })
         .lean(),
       BillingTransaction.countDocuments(),
     ]);
@@ -285,6 +388,8 @@ export const panelRoutes = new Elysia({ prefix: "/panel" })
         product: planLabel(item.plan, item.serverSlots),
         serverSlots: item.serverSlots,
         amount: item.amount,
+        discountAmount: item.discountAmount ?? 0,
+        couponCode: item.couponCode ?? null,
         currency: item.currency,
         status: item.status,
         paidAt: item.paidAt ?? item.createdAt,
@@ -335,10 +440,10 @@ export const panelRoutes = new Elysia({ prefix: "/panel" })
         .select({ plan: 1, status: 1, startsAt: 1, expiresAt: 1, cancelAtPeriodEnd: 1, grantSource: 1, serverLimitOverride: 1, serverLimitUnlimited: 1, mercadoPagoSubscriptionId: 1 })
         .lean(),
       PlanPurchase.find({ userId: account.id }).sort({ createdAt: -1 }).limit(100)
-        .select({ plan: 1, serverSlots: 1, amount: 1, currency: 1, status: 1, externalReference: 1, createdAt: 1, updatedAt: 1 })
+        .select({ plan: 1, serverSlots: 1, amount: 1, discountAmount: 1, couponCode: 1, currency: 1, status: 1, externalReference: 1, createdAt: 1, updatedAt: 1 })
         .lean(),
       BillingTransaction.find({ userId: account.id }).sort({ paidAt: -1, createdAt: -1 }).limit(100)
-        .select({ purchaseReference: 1, plan: 1, serverSlots: 1, amount: 1, currency: 1, status: 1, paidAt: 1, createdAt: 1 })
+        .select({ purchaseReference: 1, plan: 1, serverSlots: 1, amount: 1, discountAmount: 1, couponCode: 1, currency: 1, status: 1, paidAt: 1, createdAt: 1 })
         .lean(),
     ]);
     const spend = await BillingTransaction.aggregate<{ amount: number; count: number }>([
@@ -368,6 +473,8 @@ export const panelRoutes = new Elysia({ prefix: "/panel" })
         product: planLabel(order.plan, order.serverSlots ?? 0),
         serverSlots: order.serverSlots ?? 0,
         amount: order.amount,
+        discountAmount: order.discountAmount ?? 0,
+        couponCode: order.couponCode ?? null,
         currency: order.currency,
         status: order.status,
         createdAt: order.createdAt,
@@ -378,6 +485,8 @@ export const panelRoutes = new Elysia({ prefix: "/panel" })
         product: planLabel(transaction.plan, transaction.serverSlots),
         serverSlots: transaction.serverSlots,
         amount: transaction.amount,
+        discountAmount: transaction.discountAmount ?? 0,
+        couponCode: transaction.couponCode ?? null,
         currency: transaction.currency,
         status: transaction.status,
         paidAt: transaction.paidAt ?? transaction.createdAt,

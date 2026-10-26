@@ -10,8 +10,13 @@ import { PlanPurchase } from "../../database/models/PlanPurchase.js";
 import { BillingTransaction } from "../../database/models/BillingTransaction.js";
 import { PaymentEvent } from "../../database/models/PaymentEvent.js";
 import { BillingRateLimit } from "../../database/models/BillingRateLimit.js";
+import { Coupon, type CouponRecord } from "../../database/models/Coupon.js";
 import { generateTemporaryPremiumLicense } from "../plugins/license.js";
 import { authSessionPlugin } from "../plugins/better-auth.js";
+import { CouponError, getCouponUseForAccount, quoteCoupon, reserveCoupon, settleCouponReservation, type CouponPriceLine } from "../plugins/coupons.js";
+import { syncSubscriptionAuthorization } from "../plugins/subscription-access.js";
+import { claimPaymentEvent } from "../plugins/payment-events.js";
+import { applyCouponDiscountToLines } from "../../domain/coupons.js";
 import { hasPremiumAccess, hasTrustedWebOrigin } from "../plugins/plan-access.js";
 import {
   MAX_SERVER_SLOTS_PER_PURCHASE,
@@ -29,6 +34,7 @@ import {
 const checkoutBody = z.object({
   plan: z.enum(["monthly", "lifetime", "aether", "server_slots"]),
   serverSlots: z.number().int().min(0).max(MAX_SERVER_SLOTS_PER_PURCHASE).default(0),
+  couponCode: z.string().trim().min(3).max(32).transform((value) => value.toUpperCase()).optional(),
   returnTo: z.string().optional(),
 }).superRefine((value, context) => {
   if (value.plan === "monthly" && value.serverSlots > 0) {
@@ -38,6 +44,26 @@ const checkoutBody = z.object({
     context.addIssue({ code: "custom", path: ["serverSlots"], message: "Selecione pelo menos uma vaga de servidor." });
   }
 });
+
+const couponValidationBody = z.object({
+  plan: z.enum(["monthly", "lifetime", "aether", "server_slots"]),
+  serverSlots: z.number().int().min(0).max(MAX_SERVER_SLOTS_PER_PURCHASE).default(0),
+  couponCode: z.string().trim().min(3).max(32).transform((value) => value.toUpperCase()),
+}).superRefine((value, context) => {
+  if (value.plan === "monthly" && value.serverSlots > 0) {
+    context.addIssue({ code: "custom", path: ["serverSlots"], message: "Slots extras não podem ser incluídos em uma assinatura mensal." });
+  }
+  if (value.plan === "server_slots" && value.serverSlots < 1) {
+    context.addIssue({ code: "custom", path: ["serverSlots"], message: "Selecione pelo menos uma vaga de servidor." });
+  }
+});
+
+function getPurchaseLines(plan: "monthly" | "lifetime" | "aether" | "server_slots", serverSlots: number): CouponPriceLine[] {
+  const lines: CouponPriceLine[] = [];
+  if (plan !== "server_slots") lines.push({ product: plan, amount: getPlanConfig(plan).amount });
+  if (serverSlots > 0) lines.push({ product: "server_slots", amount: serverSlots * SERVER_SLOT_PRICE });
+  return lines;
+}
 
 const getClient = () => {
   if (!env.MERCADOPAGO_ACCESS_TOKEN) throw new Error("Mercado Pago is not configured");
@@ -182,6 +208,26 @@ export const billingRoutes = new Elysia({ prefix: "/billing" })
       additionalServerSlots: Number(slotPurchases?.total ?? 0),
     };
   }, { auth: true })
+  .post("/coupon/validate", async ({ user, body, status, request }) => {
+    if (!hasTrustedWebOrigin(request)) return status(403, { message: "Origem da solicitação não permitida." });
+    if (!(await rateLimit(user.id, "coupon-validate", 15, 60_000))) return status(429, { message: "Muitas tentativas de cupom. Aguarde um minuto." });
+    const { plan, serverSlots, couponCode } = couponValidationBody.parse(body);
+    const coupon = await Coupon.findOne({ code: couponCode }).lean();
+    if (!coupon) return status(404, { code: "COUPON_NOT_FOUND", message: "Este código de cupom não foi encontrado." });
+    try {
+      const quote = quoteCoupon(coupon, getPurchaseLines(plan, serverSlots));
+      if (coupon.maxPerAccount != null) {
+        const usage = await getCouponUseForAccount(String(coupon._id), user.id);
+        if ((usage?.usedCount ?? 0) + (usage?.reservedCount ?? 0) >= coupon.maxPerAccount) {
+          throw new CouponError("Esta conta já atingiu o limite de usos deste cupom.", "COUPON_ACCOUNT_LIMIT", 409);
+        }
+      }
+      return { code: coupon.code, ...quote };
+    } catch (error) {
+      if (error instanceof CouponError) return status(error.status, { code: error.code, message: error.message });
+      throw error;
+    }
+  }, { auth: true, body: couponValidationBody })
   .post("/trial", async ({ user, status, request }) => {
     if (!env.TEMP_LICENSE_TRIAL_ENABLED) return status(404, { code: "TRIAL_DISABLED", message: "O teste temporário está desativado." });
     if (!hasTrustedWebOrigin(request)) return status(403, { message: "Origem da solicitação não permitida." });
@@ -232,7 +278,7 @@ export const billingRoutes = new Elysia({ prefix: "/billing" })
   .post("/checkout", async ({ user, body, status, request }) => {
     if (!hasTrustedWebOrigin(request)) return status(403, { message: "Origem da solicitação não permitida." });
     if (!(await rateLimit(user.id, "checkout", 5, 60_000))) return status(429, { message: "Muitas tentativas de checkout. Aguarde um minuto." });
-    const { plan, serverSlots, returnTo } = checkoutBody.parse(body);
+    const { plan, serverSlots, returnTo, couponCode } = checkoutBody.parse(body);
     const safeReturnTo = safeReturnPath(returnTo);
     const current = await PlanAccess.findOne({ userId: user.id }).lean();
     if (plan === "server_slots") {
@@ -247,29 +293,80 @@ export const billingRoutes = new Elysia({ prefix: "/billing" })
     const externalReference = randomUUID();
     const planConfig = plan === "server_slots" ? null : getPlanConfig(plan);
     const planPrice = planConfig?.amount ?? 0;
-    const price = Math.round((planPrice + serverSlots * SERVER_SLOT_PRICE) * 100) / 100;
-    const purchase = await PlanPurchase.create({ userId: user.id, plan, serverSlots, amount: price, currency: PLANS_CONFIG.currency, externalReference, status: "pending" });
-    const client = getClient();
-    const base = appUrl();
+    const regularAmount = Math.round((planPrice + serverSlots * SERVER_SLOT_PRICE) * 100) / 100;
+    const originalLines = getPurchaseLines(plan, serverSlots);
+    let appliedCoupon: (CouponRecord & { _id: { toString(): string } }) | null = null;
+    let discountAmount = 0;
+    let price = regularAmount;
+    if (couponCode) {
+      const coupon = await Coupon.findOne({ code: couponCode }).lean();
+      if (!coupon) return status(404, { code: "COUPON_NOT_FOUND", message: "Este código de cupom não foi encontrado." });
+      try {
+        const quote = quoteCoupon(coupon, originalLines);
+        if (coupon.maxPerAccount != null) {
+          const usage = await getCouponUseForAccount(String(coupon._id), user.id);
+          if ((usage?.usedCount ?? 0) + (usage?.reservedCount ?? 0) >= coupon.maxPerAccount) {
+            throw new CouponError("Esta conta já atingiu o limite de usos deste cupom.", "COUPON_ACCOUNT_LIMIT", 409);
+          }
+        }
+        appliedCoupon = coupon as CouponRecord & { _id: { toString(): string } };
+        discountAmount = quote.discountAmount;
+        price = quote.total;
+        await reserveCoupon({
+          coupon,
+          userId: user.id,
+          purchaseReference: externalReference,
+          discountAmount,
+        });
+      } catch (error) {
+        if (error instanceof CouponError) return status(error.status, { code: error.code, message: error.message });
+        throw error;
+      }
+    }
+    const couponId = appliedCoupon?._id ? String(appliedCoupon._id) : undefined;
+    const discountedLines = appliedCoupon
+      ? applyCouponDiscountToLines(originalLines, appliedCoupon.products, discountAmount)
+      : originalLines;
     const returnPage = safeReturnTo === "/cart" ? "/cart" : "/plans";
-    const returnUrl = (result: "success" | "pending" | "failure" | "subscription") =>
-      `${base}${returnPage}?return=${result}&purchase=${externalReference}&returnTo=${encodeURIComponent(safeReturnTo)}`;
+    let providerRequestStarted = false;
+    let providerCheckoutCreated = false;
     try {
+      await PlanPurchase.create({
+        userId: user.id,
+        plan,
+        serverSlots,
+        amount: price,
+        regularAmount,
+        discountAmount,
+        ...(couponId ? { couponId, couponCode: appliedCoupon?.code } : {}),
+        currency: PLANS_CONFIG.currency,
+        externalReference,
+        status: "pending",
+      });
+      const client = getClient();
+      const base = appUrl();
+      const returnUrl = (result: "success" | "pending" | "failure" | "subscription") =>
+        `${base}${returnPage}?return=${result}&purchase=${externalReference}&returnTo=${encodeURIComponent(safeReturnTo)}`;
       if (plan === "lifetime" || plan === "aether" || plan === "server_slots") {
-        const planItem = planConfig
+        const discountedPlanAmount = planConfig ? discountedLines[0]?.amount ?? planConfig.amount : 0;
+        const discountedSlotsAmount = serverSlots > 0
+          ? discountedLines[planConfig ? 1 : 0]?.amount ?? serverSlots * SERVER_SLOT_PRICE
+          : 0;
+        const planItem = planConfig && discountedPlanAmount > 0
           ? {
               id: `pluginsx-${plan}`,
               title: `PluginsX | ${planConfig.name}`,
               description: `Acesso vitalício Premium/Plus do PluginsX com até ${planConfig.serverLimit} servidores.`,
               quantity: 1,
               currency_id: PLANS_CONFIG.currency as "BRL",
-              unit_price: planConfig.amount,
+              unit_price: discountedPlanAmount,
             }
           : null;
         const items = [
           ...(planItem ? [planItem] : []),
-          ...(serverSlots > 0 ? [{ id: "pluginsx-server-slot", title: `PluginsX | ${PLANS_CONFIG.serverSlot.name}`, description: "Uma vaga adicional permanente para uma licença Plus ativa.", quantity: serverSlots, currency_id: PLANS_CONFIG.currency as "BRL", unit_price: SERVER_SLOT_PRICE }] : []),
+          ...(serverSlots > 0 && discountedSlotsAmount > 0 ? [{ id: "pluginsx-server-slot", title: `PluginsX | ${serverSlots} ${PLANS_CONFIG.serverSlot.name}${serverSlots === 1 ? "" : "s"}`, description: "Vagas adicionais permanentes para uma licença Plus ativa.", quantity: 1, currency_id: PLANS_CONFIG.currency as "BRL", unit_price: discountedSlotsAmount }] : []),
         ];
+        providerRequestStarted = true;
         const preference = await new Preference(client).create({
           requestOptions: { idempotencyKey: externalReference },
           body: {
@@ -280,10 +377,12 @@ export const billingRoutes = new Elysia({ prefix: "/billing" })
             auto_return: "approved",
           },
         });
+        providerCheckoutCreated = true;
         if (!preference.id || !preference.init_point) throw new Error("Checkout preference missing redirect URL");
-        await PlanPurchase.updateOne({ _id: purchase._id }, { $set: { preferenceId: preference.id } });
+        await PlanPurchase.updateOne({ externalReference }, { $set: { preferenceId: preference.id } });
         return { checkoutUrl: preference.init_point, purchaseReference: externalReference };
       }
+      providerRequestStarted = true;
       const subscription = await new PreApproval(client).create({
         requestOptions: { idempotencyKey: externalReference },
         body: {
@@ -299,11 +398,18 @@ export const billingRoutes = new Elysia({ prefix: "/billing" })
           },
         },
       });
+      providerCheckoutCreated = true;
       if (!subscription.id || !subscription.init_point) throw new Error("Subscription checkout missing redirect URL");
-      await PlanPurchase.updateOne({ _id: purchase._id }, { $set: { mercadoPagoSubscriptionId: subscription.id } });
+      await PlanPurchase.updateOne({ externalReference }, { $set: { mercadoPagoSubscriptionId: subscription.id } });
       return { checkoutUrl: subscription.init_point, purchaseReference: externalReference };
     } catch (error) {
       const details = error && typeof error === "object" ? error as Record<string, unknown> : {};
+      const providerStatus = Number(details.status);
+      // Timeouts and errors after creation can leave a payable checkout at the
+      // provider. Preserve its reservation until reconciliation confirms closure.
+      const definitivelyRejected = !providerCheckoutCreated && providerStatus >= 400 && providerStatus < 500 && providerStatus !== 408;
+      const releaseReservation = !providerRequestStarted || definitivelyRejected;
+      if (releaseReservation) await settleCouponReservation(externalReference, "released");
       console.error("[billing] Mercado Pago checkout creation failed", {
         plan,
         name: details.name,
@@ -312,7 +418,7 @@ export const billingRoutes = new Elysia({ prefix: "/billing" })
         error: details.error,
         causes: details.causes,
       });
-      await PlanPurchase.updateOne({ _id: purchase._id, status: "pending" }, { $set: { status: "cancelled" } });
+      if (releaseReservation) await PlanPurchase.updateOne({ externalReference, status: "pending" }, { $set: { status: "cancelled" } });
       return status(503, { message: "Não foi possível iniciar o checkout agora. Tente novamente." });
     }
   }, { auth: true, body: checkoutBody })
@@ -329,13 +435,15 @@ export const billingRoutes = new Elysia({ prefix: "/billing" })
       access.status = periodEnd ? "active" : "canceled";
       access.cancelAtPeriodEnd = Boolean(periodEnd);
       await access.save();
+      // Cancellation stops future invoices; an already submitted charge may
+      // still settle. Keep its reservation until provider reconciliation.
       return { status: subscription.status ?? "cancelled", expiresAt: periodEnd };
     } catch {
       return status(503, { message: "Não foi possível cancelar a renovação agora." });
     }
   }, { auth: true })
   .get("/purchase/:reference", async ({ user, params, status }) => {
-    const purchase = await PlanPurchase.findOne({ externalReference: params.reference, userId: user.id }).select({ plan: 1, serverSlots: 1, status: 1, createdAt: 1 }).lean();
+    const purchase = await PlanPurchase.findOne({ externalReference: params.reference, userId: user.id }).select({ plan: 1, serverSlots: 1, status: 1, couponCode: 1, discountAmount: 1, createdAt: 1 }).lean();
     if (!purchase) return status(404, { message: "Compra não encontrada." });
     return purchase;
   }, { auth: true, params: z.object({ reference: z.string().uuid() }) })
@@ -349,12 +457,14 @@ export const billingRoutes = new Elysia({ prefix: "/billing" })
     } catch { return status(401, { message: "Invalid notification" }); }
     const body = await request.json().catch(() => null) as { type?: unknown; action?: unknown; data?: { id?: unknown } } | null;
     const resourceId = String(body?.data?.id ?? dataId);
+    if (resourceId !== dataId) return status(401, { message: "Notification resource does not match its signature" });
     const type = String(body?.type ?? body?.action ?? "");
     const eventId = `${String((body as { id?: unknown } | null)?.id ?? requestId)}:${type}:${resourceId}`;
     try {
-      await PaymentEvent.create({ eventId, type, resourceId, status: "processing" });
+      const claim = await claimPaymentEvent(eventId, type, resourceId);
+      if (claim === "processed") return { received: true, duplicate: true };
+      if (claim === "busy") return status(503, { message: "Notification is still processing; retry later" });
     } catch (error) {
-      if (error && typeof error === "object" && "code" in error && error.code === 11000) return { received: true, duplicate: true };
       return status(503, { message: "Notification could not be recorded" });
     }
     let chargeEventId: string | undefined;
@@ -428,6 +538,8 @@ export const billingRoutes = new Elysia({ prefix: "/billing" })
           plan: purchase.plan,
           serverSlots: purchase.serverSlots ?? 0,
           amount: Number(payment.transaction_amount),
+          discountAmount: purchase.discountAmount ?? 0,
+          ...(purchase.couponCode ? { couponCode: purchase.couponCode } : {}),
           currency: payment.currency_id,
           status: nextStatus,
         };
@@ -439,6 +551,9 @@ export const billingRoutes = new Elysia({ prefix: "/billing" })
           { $set: transactionUpdate },
           { upsert: true },
         );
+        if (nextStatus === "approved") await settleCouponReservation(purchase.externalReference, "approved");
+        // A canceled payment attempt does not invalidate its checkout link.
+        // Keep its coupon reserved until the checkout itself is canceled.
         if (purchase.plan === "lifetime" || purchase.plan === "aether") {
           if (nextStatus === "approved") {
             const currentAccess = await PlanAccess.findOne({ userId: purchase.userId }).lean();
@@ -480,11 +595,7 @@ export const billingRoutes = new Elysia({ prefix: "/billing" })
         const purchase = subscription.external_reference ? await PlanPurchase.findOne({ externalReference: subscription.external_reference, mercadoPagoSubscriptionId: resourceId }) : null;
         if (!purchase || purchase.plan !== "monthly" || Number(subscription.auto_recurring?.transaction_amount) !== purchase.amount || subscription.auto_recurring?.currency_id !== PLANS_CONFIG.currency) throw new Error("Subscription does not match an internal purchase");
         if (subscription.status === "authorized") {
-          const currentAccess = await PlanAccess.findOne({ userId: purchase.userId }).lean();
-          const hasActivePermanentPlan = (currentAccess?.plan === "lifetime" || currentAccess?.plan === "aether") && currentAccess.status === "active";
-          if (!hasActivePermanentPlan) {
-            await PlanAccess.updateOne({ userId: purchase.userId }, { $set: { userId: purchase.userId, plan: "monthly", status: "pending", mercadoPagoSubscriptionId: resourceId, cancelAtPeriodEnd: false }, $unset: { grantSource: "" } }, { upsert: true });
-          }
+          await syncSubscriptionAuthorization(purchase.userId, resourceId, true);
         } else if (["cancelled", "paused"].includes(subscription.status ?? "")) {
           const access = await PlanAccess.findOne({ userId: purchase.userId, mercadoPagoSubscriptionId: resourceId, grantSource: { $ne: "owner" } });
           if (access) {
@@ -494,13 +605,9 @@ export const billingRoutes = new Elysia({ prefix: "/billing" })
             await access.save();
           }
           await PlanPurchase.updateOne({ _id: purchase._id }, { $set: { status: "cancelled" } });
-        } else if (["pending", "authorized"].includes(subscription.status ?? "")) {
-          const currentAccess = await PlanAccess.findOne({ userId: purchase.userId }).lean();
-          const monthlyAccess = currentAccess?.plan === "monthly" ? currentAccess : null;
-          const activePermanentPlan = (currentAccess?.plan === "lifetime" || currentAccess?.plan === "aether") && currentAccess.status === "active";
-          if ((!monthlyAccess || monthlyAccess.status !== "active" || !monthlyAccess.expiresAt || monthlyAccess.expiresAt <= new Date()) && !activePermanentPlan) {
-            await PlanAccess.updateOne({ userId: purchase.userId }, { $set: { userId: purchase.userId, plan: "monthly", status: "pending", mercadoPagoSubscriptionId: resourceId }, $unset: { grantSource: "" } }, { upsert: true });
-          }
+          // Existing charges may still settle after cancellation or a pause.
+        } else if (subscription.status === "pending") {
+          await syncSubscriptionAuthorization(purchase.userId, resourceId, false);
         }
       } else if (type === "topic_chargebacks_wh") {
         const chargeback = await new Chargeback(client).get({ id: resourceId });

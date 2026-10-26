@@ -1,4 +1,5 @@
 import { Schema, model } from "mongoose";
+import { serverIconIds, type ServerIconId } from "../../domain/server-profile.js";
 
 export type ActivationState = "PENDING" | "ACTIVE" | "INACTIVE" | "REJECTED" | "EXPIRED" | "REVOKED" | "ERROR";
 
@@ -7,6 +8,10 @@ export interface LicenseServerInterface {
   licenseId: string;
   serverId: string;
   name: string;
+  displayName?: string;
+  tags?: string[];
+  icon?: ServerIconId;
+  pinned?: boolean;
   minecraftVersion: string;
   implementation: string;
   implementationVersion: string;
@@ -22,6 +27,10 @@ const LicenseServerSchema = new Schema<LicenseServerInterface>({
   licenseId: { type: String, required: true, index: true },
   serverId: { type: String, required: true },
   name: { type: String, required: true },
+  displayName: { type: String, default: "", maxlength: 100 },
+  tags: { type: [{ type: String, maxlength: 24 }], default: [] },
+  icon: { type: String, enum: serverIconIds, default: "grass" },
+  pinned: { type: Boolean, default: false },
   minecraftVersion: { type: String, required: true },
   implementation: { type: String, required: true },
   implementationVersion: { type: String, required: true },

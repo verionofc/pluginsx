@@ -4,7 +4,7 @@ import { createPageMetadata } from "@/lib/seo";
 export const metadata = createPageMetadata({
   title: "Central de Mundos",
   description:
-    "Consulte suas licenças, keys e servidores conectados em um só lugar.",
+    "Recupere suas keys, autorize instalações e acompanhe os pedidos de acesso dos seus servidores.",
   path: "/account",
   privatePage: true,
 });

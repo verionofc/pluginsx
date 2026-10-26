@@ -5,9 +5,11 @@ import "@/styles/globals.css";
 import { CartProvider } from "@/components/cart/CartProvider";
 import { AccountNav } from "@/components/ui/AccountNav";
 import { MiniFooter } from "@/components/ui/MiniFooter";
+import { SiteBackground } from "@/components/ui/SiteBackground";
 import { settings } from "@/lib";
 import { DefaultProviders } from "@/lib/providers";
 import { openGraphImageAlt, openGraphImagePath, siteOrigin } from "@/lib/seo";
+import { appearanceBootstrap } from "@/lib/site-themes";
 
 const monocraft = localFont({
   src: [
@@ -25,7 +27,7 @@ export const metadata: Metadata = {
     template: "%s | PluginsX",
   },
   description:
-    "Plugins, licenças e ferramentas PaperMC para quem constrói e mantém os próprios mundos.",
+    "Plugins para PaperMC, versões para baixar e licenças para administrar o acesso dos seus servidores.",
   authors: [{ name: settings.author, url: settings.links.github }],
   creator: settings.author,
   alternates: { canonical: "/" },
@@ -35,7 +37,7 @@ export const metadata: Metadata = {
     siteName: "PluginsX",
     title: "PluginsX — seu servidor, suas regras",
     description:
-      "Plugins, licenças e ferramentas PaperMC para quem constrói e mantém os próprios mundos.",
+      "Plugins para PaperMC, versões para baixar e licenças para administrar o acesso dos seus servidores.",
     url: "/",
     images: [
       {
@@ -50,7 +52,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "PluginsX — seu servidor, suas regras",
     description:
-      "Plugins, licenças e ferramentas PaperMC para quem constrói e mantém os próprios mundos.",
+      "Plugins para PaperMC, versões para baixar e licenças para administrar o acesso dos seus servidores.",
     images: [
       {
         url: openGraphImagePath,
@@ -74,25 +76,19 @@ export default function RootLayout({
     <html
       lang="pt-BR"
       className={`${monocraft.variable} h-full antialiased`}
+      data-site-theme="default"
+      data-scene-motion="auto"
       suppressHydrationWarning
     >
-      <body className="antialiased relative isolate flex min-h-screen w-full flex-col overflow-x-hidden bg-black">
-        <div
-          aria-hidden="true"
-          className="pointer-events-none fixed inset-0 z-0 bg-cover bg-center"
-          style={{
-            backgroundImage:
-              "url('/images/wallpaper_minecraft_15th-anniversary/wallpaper_minecraft_15th-anniversary_2560x1440.png')",
-          }}
+      <head>
+        <script
+          id="site-appearance-init"
+          // biome-ignore lint/security/noDangerouslySetInnerHtml: Static internal bootstrap validates saved preferences before applying them.
+          dangerouslySetInnerHTML={{ __html: appearanceBootstrap }}
         />
-        <div
-          aria-hidden="true"
-          className="pointer-events-none fixed inset-0 z-0 bg-black/60 backdrop-blur-[3px]"
-        />
-        <div
-          aria-hidden="true"
-          className="pointer-events-none fixed inset-0 z-0 bg-[radial-gradient(ellipse_at_50%_35%,rgba(13,25,15,0.18),rgba(0,0,0,0.56)_82%)]"
-        />
+      </head>
+      <body className="antialiased relative isolate flex min-h-screen w-full flex-col overflow-x-hidden">
+        <SiteBackground />
         <CartProvider>
           <DefaultProviders>
             {children}

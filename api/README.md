@@ -152,7 +152,8 @@ Endpoints de gerenciamento:
 GET  /billing/catalog
 GET  /billing/state                 # requer sessão
 POST /billing/trial                 # requer sessão; opcional; duração definida em plans.json
-POST /billing/checkout              # requer sessão; { "plan": "monthly" | "lifetime" | "aether" | "server_slots", "serverSlots"?: number }
+POST /billing/coupon/validate        # requer sessão; { plan, serverSlots, couponCode }
+POST /billing/checkout              # requer sessão; { plan, serverSlots?, couponCode?, returnTo? }
 POST /billing/cancel                # requer sessão; cancela a renovação mensal
 POST /billing/webhook               # validação de assinatura do Mercado Pago
 GET  /billing/purchase/{reference}  # requer sessão e propriedade da compra
@@ -170,6 +171,9 @@ salvos em `PlanPurchase`, que pode manter apenas o pagamento mais recente de
 cada assinatura mensal.
 
 ```text
+GET  /panel/coupons
+POST /panel/coupons                  # produtos pagos, desconto, limites e validade
+POST /panel/coupons/{id}/active      # { "active": boolean }
 GET  /panel/dashboard
 GET  /panel/accounts?limit=25&offset=0 # contas com total por produto
 GET  /panel/transactions?limit=25&offset=0
@@ -191,3 +195,40 @@ limite do Trial também vêm desse arquivo; vagas extras aprovadas somam-se ao
 limite do plano pago e deixam de contar quando a compra é reembolsada ou
 contestada. Cancelar uma assinatura mantém o acesso e as vagas extras até o fim
 do período registrado como pago.
+
+## Cupons e identificação de servidores
+
+Cupons aceitam somente produtos pagos: `monthly`, `lifetime`, `aether` e
+`server_slots`. O painel define desconto percentual ou fixo, produtos elegíveis,
+início, término, uso único global, vários resgates ou limite por conta. Cupons
+por conta exigem uma data final. O Trial não aceita cupons. O desconto do mensal
+é recorrente durante a assinatura contratada; a data final do cupom encerra
+novas adesões, sem alterar contratos já autorizados no Mercado Pago.
+
+Orçamentos e rateio usam centavos inteiros e mantêm pelo menos R$ 0,01 no total
+elegível. Itens integralmente descontados são omitidos no checkout. Reservas,
+contadores globais, limites por conta e confirmação do resgate são atualizados
+em transações MongoDB. O índice único da referência da compra impede duplicação.
+Pagamentos cancelados isolados e assinaturas pausadas ou canceladas mantêm a
+reserva: links podem continuar pagáveis e cobranças anteriores ainda podem
+ser liquidadas. Erros de rede ambíguos após solicitar
+um checkout também preservam a reserva. Ainda não há reconciliação automática
+para reservas de checkouts abandonados: confira o estado no provedor antes de
+intervir nos contadores.
+
+`PATCH /license/servers/{id}/appearance` aceita apenas `displayName`, `tags`,
+`icon` e `pinned`. Exige sessão, origem web permitida, propriedade da licença
+(ou Trial válido) e servidor em estado `ACTIVE`. Atualizações parciais preservam
+os campos ausentes. Os endpoints públicos usados pelo plugin não retornam essas
+preferências privadas.
+
+Os testes de transações podem usar uma instância MongoDB local descartável em
+replica set, com um banco chamado `pluginsx_coupon_test`:
+
+```bash
+COUPON_TEST_MONGODB_URI='mongodb://127.0.0.1:27017/pluginsx_coupon_test?replicaSet=test' bun test src
+```
+
+Essa opção limpa as cinco coleções de teste entre cenários e rejeita URLs
+remotas ou outros nomes de banco. Sem a variável, os testes de integração são
+omitidos e os testes de domínio continuam executando normalmente.

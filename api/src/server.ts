@@ -118,7 +118,7 @@ const app = new Elysia({ name: "PluginsX API", adapter: node() })
     cors({
       origin: (request) =>
         trustedWebOrigins.includes(request.headers.get("origin") ?? ""),
-      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+      methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
       credentials: true,
       allowedHeaders: ["Content-Type", "Authorization", "Cookie"],
     }),

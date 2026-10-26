@@ -13,6 +13,10 @@ export interface PlanAccessRecord {
   expiresAt?: Date;
   mercadoPagoSubscriptionId?: string;
   cancelAtPeriodEnd?: boolean;
+  nextBillingAt?: Date | null;
+  billingScheduleCheckedAt?: Date;
+  billingScheduleSubscriptionId?: string;
+  billingRenewalEnabled?: boolean;
   grantSource?: "owner";
   serverLimitOverride?: number;
   serverLimitUnlimited?: boolean;
@@ -31,6 +35,10 @@ const schema = new Schema<PlanAccessRecord>({
   expiresAt: Date,
   mercadoPagoSubscriptionId: { type: String, sparse: true, unique: true },
   cancelAtPeriodEnd: { type: Boolean, default: false },
+  nextBillingAt: Date,
+  billingScheduleCheckedAt: Date,
+  billingScheduleSubscriptionId: String,
+  billingRenewalEnabled: Boolean,
   grantSource: { type: String, enum: ["owner"] },
   serverLimitOverride: { type: Number, min: 1, max: 1_000_000 },
   serverLimitUnlimited: { type: Boolean, default: false },

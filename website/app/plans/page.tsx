@@ -4,7 +4,7 @@ import { createPageMetadata } from "@/lib/seo";
 export const metadata = createPageMetadata({
   title: "Planos",
   description:
-    "Compare os planos PluginsX, escolha seus limites de servidores e encontre o acesso certo para sua rede PaperMC.",
+    "Teste os recursos Premium, escolha uma licença para sua comunidade ou amplie a capacidade da sua rede PaperMC.",
   path: "/plans",
 });
 

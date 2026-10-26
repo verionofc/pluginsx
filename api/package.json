@@ -21,7 +21,7 @@
     "@elysiajs/node": "^1.4.5",
     "@elysiajs/openapi": "^1.4.13",
     "argon2": "^0.44.0",
-    "axios": "^1.18.1",
+    "axios": "^1.20.0",
     "better-auth": "^1.4.12",
     "chalk": "^5.6.2",
     "elysia": "latest",
@@ -29,7 +29,7 @@
     "mongoose": "^8",
     "pino": "^10.1.1",
     "uuid": "^14.0.1",
-    "zod": "^4.3.5"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@types/node": "^24",

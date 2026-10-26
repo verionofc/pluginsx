@@ -10,6 +10,6 @@ export const settings = {
     github: "https://github.com/yeytaken",
     pluginsx: {
       github: "https://github.com/verionofc/pluginsx",
-    }
+    },
   },
 };

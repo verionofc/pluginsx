@@ -13,17 +13,33 @@ import {
   TbEye,
   TbEyeOff,
   TbLoader2,
+  TbPencil,
   TbPick,
+  TbPin,
+  TbPinnedOff,
   TbRefresh,
   TbShieldCheck,
-  TbSparkles,
   TbUserCircle,
 } from "react-icons/tb";
-
+import { LicenseCapacity } from "@/components/account/LicenseCapacity";
+import { LicenseIdentity } from "@/components/account/LicenseIdentity";
+import { MinecraftItemIcon } from "@/components/account/LicenseWorldScene";
+import {
+  MonthlyBillingCountdown,
+  type MonthlyBillingInfo,
+} from "@/components/account/MonthlyBillingCountdown";
+import { ServerItemIcon } from "@/components/account/ServerItemIcon";
+import { ServerProfileEditor } from "@/components/account/ServerProfileEditor";
 import { SiteLoadingScreen } from "@/components/ui/SiteLoadingScreen";
 import { useHydrated } from "@/hooks/useHydrated";
 import { useLoadingDelay } from "@/hooks/useLoadingDelay";
 import { apiUrl, authClient } from "@/lib/auth-client";
+import {
+  orderServers,
+  type ServerProfileFields,
+  type ServerProfilePatch,
+  serverDisplayName,
+} from "@/lib/server-profiles";
 
 type ActivationState =
   | "PENDING"
@@ -34,7 +50,7 @@ type ActivationState =
   | "REVOKED"
   | "ERROR";
 
-type ServerActivation = {
+type ServerActivation = ServerProfileFields & {
   id: string;
   serverId: string;
   name: string;
@@ -58,6 +74,7 @@ type AccountLicense = {
   limit: number | null;
   unlimited?: boolean;
   servers: ServerActivation[];
+  billing?: MonthlyBillingInfo | null;
 };
 
 type Feedback = { tone: "success" | "error"; text: string };
@@ -74,7 +91,7 @@ const serverStates: Record<
   },
   ACTIVE: {
     label: "Autorizado",
-    classes: "border-[#a6cf74]/30 bg-[#a6cf74]/10 text-[#d2efb2]",
+    classes: "border-outline-strong/30 bg-accent/10 text-accent-soft",
   },
   INACTIVE: {
     label: "Inativo",
@@ -126,79 +143,13 @@ function getPlanName(license: AccountLicense) {
   return license.tier === "plus" ? "Plus" : "Standard";
 }
 
-function getLicenseTheme(license: AccountLicense) {
-  if (license.plan === "lifetime") {
-    return {
-      card: "border-[#71649e]/55 shadow-[0_5px_0_#090811,0_0_28px_rgba(117,96,170,0.12)]",
-      header: "border-b border-[#71649e]/40 bg-[#171522]",
-      rail: "bg-[#a18ce0]",
-      icon: TbEye,
-      iconFrame: "border-[#a18ce0]/45 bg-[#55447d]/25 text-[#dfd3ff]",
-      eyebrow: "text-[#c0aef7]",
-      title: "text-[#f5f1ff]",
-      productTag: "border-[#a18ce0]/35 bg-[#332a4b]/65 text-[#e2d8ff]",
-      productLabel: "THE END · EDIÇÃO VITALÍCIA",
-      validBadge: "border-[#a18ce0]/35 bg-[#332a4b]/65 text-[#e2d8ff]",
-      validDot: "bg-[#b4a0f0]",
-      keyText: "text-[#ded6ff]",
-      capacityTrack: "bg-[#332e40]",
-      activeSlot: "bg-[#b4a0f0]",
-      progressFill: "bg-[#a18ce0]",
-      worldPanel: "border-t border-[#71649e]/35 bg-[#111019]",
-      worldAccent: "text-[#c0aef7]",
-      worldCount: "border-[#a18ce0]/25 bg-[#332a4b]/45 text-[#e2d8ff]",
-    };
-  }
-
-  if (license.plan === "aether") {
-    return {
-      card: "border-[#67e8f9]/45 shadow-[0_5px_0_#0c1e31,0_0_34px_rgba(34,211,238,0.12)]",
-      header: "border-b border-[#67e8f9]/25 bg-[#12232e]",
-      rail: "bg-[#67d7df]",
-      icon: TbSparkles,
-      iconFrame: "border-[#67e8f9]/40 bg-[#0e7490]/20 text-[#a5f3fc]",
-      eyebrow: "text-[#a5f3fc]",
-      title: "text-[#effaff]",
-      productTag: "border-[#a78bfa]/35 bg-[#4c1d95]/25 text-[#ddd6fe]",
-      productLabel: "AETHER · PLANO CELESTE",
-      validBadge: "border-[#67e8f9]/35 bg-[#0e7490]/20 text-[#a5f3fc]",
-      validDot: "bg-[#67e8f9]",
-      keyText: "text-[#cffafe]",
-      capacityTrack: "bg-[#173c52]",
-      activeSlot: "bg-[#67e8f9]",
-      progressFill: "bg-[#67d7df]",
-      worldPanel: "border-t border-[#67e8f9]/25 bg-[#0e1926]",
-      worldAccent: "text-[#a5f3fc]",
-      worldCount: "border-[#67e8f9]/25 bg-[#0e7490]/15 text-[#cffafe]",
-    };
-  }
-
-  return {
-    card: "border-[#718667]/35 shadow-[0_4px_0_#080d09]",
-    header: "border-b border-[#8bc34a]/25 bg-[#172019]",
-    rail: "bg-[#8bc34a]",
-    icon: TbBlocks,
-    iconFrame: "border-[#a6cf74]/35 bg-[#a6cf74]/10 text-[#c9e9a8]",
-    eyebrow: "text-[#a6cf74]",
-    title: "text-white",
-    productTag: "border-[#8bc34a]/30 bg-[#8bc34a]/10 text-[#d9f2bd]",
-    productLabel:
-      license.plan === "trial"
-        ? "TRIAL · ACESSO TEMPORÁRIO"
-        : license.plan === "monthly"
-          ? "CREEPER · MENSAL"
-          : "LICENÇA PLUS",
-    validBadge: "border-[#8bc34a]/30 bg-[#8bc34a]/10 text-[#d9f2bd]",
-    validDot: "bg-[#8bc34a]",
-    keyText: "text-[#d9f2bd]",
-    capacityTrack: "bg-white/10",
-    activeSlot: "bg-[#8bc34a]",
-    progressFill: "bg-[#8bc34a]",
-    worldPanel: "border-t border-[#718667]/25 bg-[#111a16]/70",
-    worldAccent: "text-[#a6cf74]",
-    worldCount: "border-white/10 bg-black/20 text-white/65",
-  };
-}
+const licenseStyles = {
+  eyebrow: "license-card__accent",
+  keyText: "license-card__key",
+  worldPanel: "license-card__worlds",
+  worldAccent: "license-card__accent",
+  worldCount: "license-card__world-count",
+};
 
 function getSafeReturnTo(value: string | null, origin: string) {
   if (
@@ -266,6 +217,9 @@ function LicensesPanel() {
   const [expiredTrials, setExpiredTrials] = useState<Set<string>>(
     () => new Set(),
   );
+  const [expiredMonthlyDates, setExpiredMonthlyDates] = useState<
+    Record<string, string>
+  >({});
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [feedback, setFeedback] = useState<Feedback | null>(null);
@@ -276,10 +230,18 @@ function LicensesPanel() {
   const [visibleKeys, setVisibleKeys] = useState<Record<string, boolean>>({});
   const [revealedKeys, setRevealedKeys] = useState<Record<string, string>>({});
   const [busyKeyRef, setBusyKeyRef] = useState("");
+  const [editingServer, setEditingServer] = useState<ServerActivation | null>(
+    null,
+  );
+  const [pinErrors, setPinErrors] = useState<Record<string, string>>({});
+  const [profileSavingIds, setProfileSavingIds] = useState<Set<string>>(
+    () => new Set(),
+  );
 
   const refresh = useCallback(async () => {
     setIsLoading(true);
     setLoadError("");
+    setPinErrors({});
 
     try {
       const response = await fetch("/license/servers", {
@@ -323,6 +285,18 @@ function LicensesPanel() {
       return new Set(expired).add(licenseId);
     });
   }, []);
+
+  const markMonthlyExpired = useCallback(
+    (licenseId: string, periodEndsAt: string) => {
+      setExpiredMonthlyDates((current) =>
+        current[licenseId] === periodEndsAt
+          ? current
+          : { ...current, [licenseId]: periodEndsAt },
+      );
+      void refresh();
+    },
+    [refresh],
+  );
 
   async function requestLicenseKey(licenseRef: string) {
     const response = await fetch("/license/servers/key", {
@@ -388,16 +362,81 @@ function LicensesPanel() {
     }
   }
 
+  async function updateServerProfile(
+    server: ServerActivation,
+    patch: ServerProfilePatch,
+  ) {
+    const response = await fetch(`/license/servers/${server.id}/appearance`, {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+      signal: AbortSignal.timeout(15_000),
+    });
+    const result = await response.json().catch(() => null);
+    if (response.status === 401)
+      throw new Error(
+        "Sua sessão expirou. Entre novamente para editar o servidor.",
+      );
+    if (!response.ok)
+      throw new Error(
+        typeof result?.message === "string"
+          ? result.message
+          : response.status === 422
+            ? "Confira os limites dos campos e tente novamente."
+            : "Não foi possível salvar a identificação do servidor.",
+      );
+    if (result?.id !== server.id || result?.state !== "ACTIVE")
+      throw new Error(
+        "A autorização mudou. Atualize os servidores e tente novamente.",
+      );
+    setLicenses((current) =>
+      current.map((license) => ({
+        ...license,
+        servers: license.servers.map((entry) =>
+          entry.id === server.id ? { ...entry, ...result } : entry,
+        ),
+      })),
+    );
+  }
+
+  async function togglePinned(server: ServerActivation) {
+    if (profileSavingIds.has(server.id)) return;
+    setPinErrors((current) => {
+      const next = { ...current };
+      delete next[server.id];
+      return next;
+    });
+    setProfileSavingIds((current) => new Set(current).add(server.id));
+    try {
+      await updateServerProfile(server, { pinned: !server.pinned });
+    } catch (reason) {
+      setPinErrors((current) => ({
+        ...current,
+        [server.id]:
+          reason instanceof Error
+            ? reason.message
+            : "Não foi possível fixar o servidor.",
+      }));
+    } finally {
+      setProfileSavingIds((current) => {
+        const next = new Set(current);
+        next.delete(server.id);
+        return next;
+      });
+    }
+  }
+
   async function act(
     server: ServerActivation,
     action: "approve" | "reject" | "remove" | "delete",
   ) {
     const prompt =
       action === "delete"
-        ? `Apagar o registro antigo de ${server.name}? Esta ação não pode ser desfeita.`
+        ? `Apagar o registro antigo de ${serverDisplayName(server)}? Esta ação não pode ser desfeita.`
         : action === "remove"
-          ? `Remover ${server.name}? Isso desvinculará esta instalação da licença.`
-          : `${action === "approve" ? "Autorizar" : "Rejeitar"} a solicitação de ${server.name}?`;
+          ? `Remover ${serverDisplayName(server)}? Isso desvinculará esta instalação da licença.`
+          : `${action === "approve" ? "Autorizar" : "Rejeitar"} a solicitação de ${serverDisplayName(server)}?`;
     if (!window.confirm(prompt)) return;
 
     setBusyServerId(server.id);
@@ -474,11 +513,11 @@ function LicensesPanel() {
         ].map((metric, index) => (
           <article
             key={metric.label}
-            className="relative overflow-hidden border border-[#718667]/30 bg-[#101811] px-4 py-4 shadow-[0_4px_0_#070b08]"
+            className="relative overflow-hidden border border-outline/30 bg-surface px-4 py-4 shadow-[0_4px_0_var(--site-shadow)]"
           >
             <span
               aria-hidden="true"
-              className={`absolute inset-y-0 left-0 w-1 ${index === 2 && pendingRequests > 0 ? "bg-amber-300" : "bg-[#8bc34a]"}`}
+              className={`absolute inset-y-0 left-0 w-1 ${index === 2 && pendingRequests > 0 ? "bg-amber-300" : "bg-accent"}`}
             />
             <p className="text-[10px] font-bold tracking-[0.18em] text-white/55">
               {metric.label}
@@ -492,11 +531,11 @@ function LicensesPanel() {
 
       <section
         aria-labelledby="inventory-title"
-        className="border-2 border-[#718667]/40 bg-[#111a16] shadow-[0_6px_0_#070b08]"
+        className="border-2 border-outline/40 bg-surface shadow-[0_6px_0_var(--site-shadow)]"
       >
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#718667]/30 bg-[#19251b] px-4 py-4 sm:px-5">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-outline/30 bg-surface-raised px-4 py-4 sm:px-5">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#a6cf74]">
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-accent">
               Inventário de acesso
             </p>
             <h2
@@ -510,7 +549,7 @@ function LicensesPanel() {
             type="button"
             onClick={() => void refresh()}
             disabled={isLoading}
-            className="inline-flex min-h-10 items-center gap-2 border border-[#718667]/40 bg-[#0c130f] px-3 text-xs font-semibold text-white/80 transition hover:border-[#a6cf74]/50 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c9e9a8] disabled:cursor-wait disabled:opacity-55"
+            className="inline-flex min-h-10 items-center gap-2 border border-outline/40 bg-surface-deep px-3 text-xs font-semibold text-white/80 transition hover:border-outline-strong/50 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-outline-strong disabled:cursor-wait disabled:opacity-55"
           >
             <TbRefresh
               className={`size-4 ${isLoading ? "animate-spin" : ""}`}
@@ -524,7 +563,7 @@ function LicensesPanel() {
           {feedback && (
             <p
               role={feedback.tone === "error" ? "alert" : "status"}
-              className={`mb-4 border-l-4 px-4 py-3 text-sm ${feedback.tone === "success" ? "border-[#8bc34a] bg-[#101a12] text-[#d9f2bd]" : "border-red-300 bg-red-950/40 text-red-100"}`}
+              className={`mb-4 border-l-4 px-4 py-3 text-sm ${feedback.tone === "success" ? "border-outline-strong bg-surface text-accent-soft" : "border-red-300 bg-red-950/40 text-red-100"}`}
             >
               {feedback.text}
             </p>
@@ -545,22 +584,22 @@ function LicensesPanel() {
               <button
                 type="button"
                 onClick={() => void refresh()}
-                className="font-minecraft-text mt-4 inline-flex min-h-11 items-center gap-2 border-b-4 border-[#345d2f] bg-[#5e9b43] px-4 text-xs font-bold text-white transition hover:bg-[#6eaa4d] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+                className="font-minecraft-text mt-4 inline-flex min-h-11 items-center gap-2 border-b-4 border-accent-edge bg-accent-strong px-4 text-xs font-bold text-white transition hover:bg-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
               >
                 <TbRefresh size={16} aria-hidden="true" /> Tentar novamente
               </button>
             </div>
           ) : licenses.length === 0 ? (
-            <div className="relative overflow-hidden border border-dashed border-[#718667]/45 bg-[#0c130f] p-5 sm:p-8">
+            <div className="relative overflow-hidden border border-dashed border-outline/45 bg-surface-deep p-5 sm:p-8">
               <div
                 aria-hidden="true"
-                className="absolute -right-10 -top-10 size-40 rotate-12 border-[12px] border-[#8bc34a]/10"
+                className="absolute -right-10 -top-10 size-40 rotate-12 border-[12px] border-outline-strong/10"
               />
               <div className="relative max-w-xl">
-                <span className="grid size-11 place-items-center border border-[#a6cf74]/30 bg-[#a6cf74]/10 text-[#c9e9a8]">
+                <span className="grid size-11 place-items-center border border-outline-strong/30 bg-accent/10 text-accent-soft">
                   <TbPick size={22} aria-hidden="true" />
                 </span>
-                <p className="mt-4 text-[10px] font-bold uppercase tracking-[0.2em] text-[#a6cf74]">
+                <p className="mt-4 text-[10px] font-bold uppercase tracking-[0.2em] text-accent">
                   Inventário vazio
                 </p>
                 <h3 className="font-minecraft-text mt-1 text-xl font-bold text-white">
@@ -573,13 +612,13 @@ function LicensesPanel() {
                 <div className="mt-5 flex flex-wrap gap-3">
                   <Link
                     href="/plans"
-                    className="font-minecraft-text inline-flex min-h-11 items-center gap-2 border-b-4 border-[#345d2f] bg-[#5e9b43] px-4 text-xs font-bold text-white transition hover:bg-[#6eaa4d] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+                    className="font-minecraft-text inline-flex min-h-11 items-center gap-2 border-b-4 border-accent-edge bg-accent-strong px-4 text-xs font-bold text-white transition hover:bg-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
                   >
                     Ver planos <TbChevronRight size={16} aria-hidden="true" />
                   </Link>
                   <Link
                     href="/"
-                    className="inline-flex min-h-11 items-center gap-2 border border-white/15 px-4 text-xs font-semibold text-white/75 transition hover:bg-white/5 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c9e9a8]"
+                    className="inline-flex min-h-11 items-center gap-2 border border-white/15 px-4 text-xs font-semibold text-white/75 transition hover:bg-white/5 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-outline-strong"
                   >
                     Explorar plugins{" "}
                     <TbChevronRight size={15} aria-hidden="true" />
@@ -588,7 +627,7 @@ function LicensesPanel() {
               </div>
             </div>
           ) : (
-            <div className="grid gap-4">
+            <div className="grid gap-6">
               {loadError && (
                 <p
                   role="alert"
@@ -599,8 +638,9 @@ function LicensesPanel() {
                 </p>
               )}
               {licenses.map((license) => {
-                const theme = getLicenseTheme(license);
-                const LicenseIcon = theme.icon;
+                const theme = licenseStyles;
+                const edition = license.plan ?? "standard";
+                const titleId = `license-title-${license.id}`;
                 const expiresAt = license.expiresAt
                   ? Date.parse(license.expiresAt)
                   : Number.NaN;
@@ -608,140 +648,102 @@ function LicensesPanel() {
                   license.plan === "trial" &&
                   (expiredTrials.has(license.id) ||
                     (Number.isFinite(expiresAt) && expiresAt <= Date.now()));
-                const licenseUsable = license.valid && !trialExpired;
+                const monthlyEnd = license.billing?.currentPeriodEndsAt;
+                const monthlyExpired =
+                  license.plan === "monthly" &&
+                  Boolean(monthlyEnd) &&
+                  (expiredMonthlyDates[license.id] === monthlyEnd ||
+                    Date.parse(monthlyEnd ?? "") <= Date.now());
+                const accessExpired = trialExpired || monthlyExpired;
+                const licenseUsable = license.valid && !accessExpired;
                 const keyVisible =
-                  Boolean(visibleKeys[license.id]) && !trialExpired;
-                const displayLimit = license.limit ?? Math.max(license.used, 1);
-                const slotCount = license.unlimited
-                  ? Math.max(12, Math.min(license.used + 2, 24))
-                  : Math.max(displayLimit, 1);
-                const slotPercent = license.unlimited
-                  ? 100
-                  : displayLimit > 0
-                    ? Math.min((license.used / displayLimit) * 100, 100)
-                    : 0;
-
+                  Boolean(visibleKeys[license.id]) && !accessExpired;
                 return (
                   <article
                     key={license.id}
-                    className={`overflow-hidden border bg-[#0c130f] ${theme.card}`}
+                    className="license-card"
+                    data-license-plan={edition}
+                    data-license-state={licenseUsable ? "active" : "inactive"}
+                    aria-labelledby={titleId}
                   >
-                    <div
-                      className={`relative flex flex-wrap items-start justify-between gap-4 p-4 sm:p-5 ${theme.header}`}
-                    >
-                      {license.plan === "lifetime" && (
-                        <svg
-                          aria-hidden="true"
-                          viewBox="0 0 176 88"
-                          fill="none"
-                          className="pointer-events-none absolute bottom-1 right-5 hidden h-[5.5rem] w-44 opacity-45 sm:block"
-                        >
-                          <path
-                            d="M25 77V39L87 8l62 31v38H25Z"
-                            fill="#211D2D"
-                            stroke="#9A87D3"
-                            strokeWidth="1.5"
-                          />
-                          <path
-                            d="M38 77V46l49-24 49 24v31"
-                            stroke="#7867AA"
-                            strokeWidth="1"
-                            strokeDasharray="3 4"
-                          />
-                          <path
-                            d="m87 35 20 20-20 20-20-20 20-20Z"
-                            fill="#100F17"
-                            stroke="#B5A2EA"
-                            strokeWidth="1.5"
-                          />
-                          <path
-                            d="m87 45 10 10-10 10-10-10 10-10Z"
-                            fill="#A18CE0"
-                          />
-                          <path
-                            d="M10 69h16m123 0h17M47 78l-8 6h96l-8-6"
-                            stroke="#B7B19F"
-                            strokeWidth="2"
-                            strokeLinecap="square"
-                          />
-                          <path
-                            d="m17 23 3 5 5 2-5 2-3 5-2-5-5-2 5-2 2-5Zm119 0 2 4 4 2-4 2-2 4-2-4-4-2 4-2 2-4Z"
-                            fill="#D6D0BF"
-                          />
-                          <circle cx="152" cy="18" r="1.5" fill="#B6A2EE" />
-                          <circle cx="32" cy="15" r="1" fill="#B6A2EE" />
-                        </svg>
-                      )}
-                      <span
-                        aria-hidden="true"
-                        className={`absolute inset-y-0 left-0 w-1 ${theme.rail}`}
-                      />
-                      <div className="flex min-w-0 items-start gap-3">
-                        <span
-                          className={`grid size-11 shrink-0 place-items-center border ${theme.iconFrame}`}
-                        >
-                          <LicenseIcon size={21} aria-hidden="true" />
-                        </span>
-                        <div className="min-w-0">
-                          <p
-                            className={`text-[10px] font-bold uppercase tracking-[0.18em] ${theme.eyebrow}`}
-                          >
-                            SpawnerX · licença
-                          </p>
-                          <h3
-                            className={`font-minecraft-text mt-1 truncate text-base font-bold sm:text-lg ${theme.title}`}
-                          >
-                            {getPlanName(license)}
-                          </h3>
-                          <span
-                            className={`mt-2 inline-flex min-h-6 items-center border px-2 text-[9px] font-bold uppercase tracking-[0.13em] ${theme.productTag}`}
-                          >
-                            {theme.productLabel}
-                          </span>
-                        </div>
-                      </div>
-                      <span
-                        className={`inline-flex min-h-8 items-center gap-2 border px-3 text-[10px] font-bold uppercase tracking-[0.12em] ${licenseUsable ? theme.validBadge : "border-red-200/20 bg-red-950/30 text-red-100"}`}
-                      >
-                        <span
-                          className={`size-1.5 ${licenseUsable ? theme.validDot : "bg-red-300"}`}
-                          aria-hidden="true"
-                        />
-                        {trialExpired
+                    <LicenseIdentity
+                      edition={edition}
+                      name={getPlanName(license)}
+                      titleId={titleId}
+                      reference={license.id}
+                      usable={licenseUsable}
+                      status={
+                        trialExpired
                           ? "Trial expirado"
-                          : license.valid
-                            ? "Licença válida"
-                            : "Licença inválida"}
-                      </span>
-                    </div>
+                          : monthlyExpired
+                            ? "Mensal expirado"
+                            : license.valid
+                              ? "Licença válida"
+                              : "Licença inválida"
+                      }
+                    >
+                      {license.plan === "trial" && license.expiresAt ? (
+                        trialExpired ? (
+                          "Expedição encerrada"
+                        ) : (
+                          <TrialCountdown
+                            licenseId={license.id}
+                            expiresAt={license.expiresAt}
+                            onExpired={markTrialExpired}
+                          />
+                        )
+                      ) : null}
+                    </LicenseIdentity>
+                    {license.plan === "monthly" && (
+                      <MonthlyBillingCountdown
+                        billing={license.billing}
+                        licenseId={license.id}
+                        onExpired={markMonthlyExpired}
+                      />
+                    )}
 
-                    <div className="grid gap-5 p-4 sm:p-5 lg:grid-cols-[minmax(0,1.15fr)_minmax(14rem,0.85fr)]">
-                      <div className="min-w-0">
-                        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-white/55">
+                    <div className="license-card__body">
+                      <div className="license-card__credentials">
+                        <p className="license-card__section-label">
                           Key de acesso
                         </p>
-                        <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                        <div className="license-card__key-controls mt-2 flex flex-col gap-2 sm:flex-row">
                           <code
-                            className={`flex min-h-12 min-w-0 flex-1 select-all items-center break-all border border-white/10 bg-black/35 px-3 py-3 font-mono text-xs ${theme.keyText}`}
+                            className={`license-card__key-field ${theme.keyText}`}
                           >
-                            {trialExpired
-                              ? "Key temporária expirada"
-                              : keyVisible
-                                ? revealedKeys[license.id]
-                                : "••••••••••••••••••••••••••••••••"}
+                            <span
+                              className="license-card__key-item"
+                              aria-hidden="true"
+                            >
+                              <MinecraftItemIcon kind="key" />
+                            </span>
+                            {accessExpired ? (
+                              monthlyExpired ? (
+                                "Acesso mensal expirado"
+                              ) : (
+                                "Key temporária expirada"
+                              )
+                            ) : keyVisible ? (
+                              revealedKeys[license.id]
+                            ) : (
+                              <>
+                                <span aria-hidden="true">
+                                  ••••••••••••••••••••••••••••••••
+                                </span>
+                                <span className="sr-only">Key oculta</span>
+                              </>
+                            )}
                           </code>
                           <div className="flex gap-2">
                             <button
                               type="button"
                               disabled={
-                                trialExpired || busyKeyRef === license.id
+                                accessExpired || busyKeyRef === license.id
                               }
-                              aria-label={
-                                keyVisible ? "Ocultar key" : "Mostrar key"
-                              }
+                              aria-label={`${keyVisible ? "Ocultar" : "Mostrar"} key de ${getPlanName(license)}`}
                               aria-pressed={keyVisible}
                               onClick={() => void toggleKey(license.id)}
-                              className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 border border-white/15 px-3 text-xs text-white/80 transition hover:bg-white/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c9e9a8] disabled:cursor-not-allowed disabled:opacity-40 sm:flex-none"
+                              className="license-mc-button inline-flex min-h-11 flex-1 items-center justify-center gap-2 border border-white/15 px-3 text-xs text-white/80 transition hover:bg-white/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-outline-strong disabled:cursor-not-allowed disabled:opacity-40 sm:flex-none"
                             >
                               {busyKeyRef === license.id ? (
                                 <TbLoader2
@@ -756,111 +758,47 @@ function LicensesPanel() {
                               )}
                               {keyVisible
                                 ? "Ocultar"
-                                : trialExpired
+                                : accessExpired
                                   ? "Expirada"
                                   : "Mostrar"}
                             </button>
                             <button
                               type="button"
                               disabled={
-                                trialExpired || busyKeyRef === license.id
+                                accessExpired || busyKeyRef === license.id
                               }
+                              aria-label={`Copiar key de ${getPlanName(license)}`}
                               onClick={() => void copyKey(license.id)}
-                              className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 border border-white/15 px-3 text-xs text-white/80 transition hover:bg-white/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c9e9a8] disabled:cursor-not-allowed disabled:opacity-40 sm:flex-none"
+                              className="license-mc-button inline-flex min-h-11 flex-1 items-center justify-center gap-2 border border-white/15 px-3 text-xs text-white/80 transition hover:bg-white/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-outline-strong disabled:cursor-not-allowed disabled:opacity-40 sm:flex-none"
                             >
                               <TbCopy size={15} aria-hidden="true" /> Copiar
                             </button>
                           </div>
                         </div>
-                        <p
-                          className={`mt-2 text-xs opacity-85 ${licenseUsable ? theme.eyebrow : "text-red-100/75"}`}
-                        >
-                          {license.plan === "trial" && license.expiresAt ? (
-                            trialExpired ? (
-                              "Este acesso temporário expirou."
-                            ) : (
-                              <TrialCountdown
-                                licenseId={license.id}
-                                expiresAt={license.expiresAt}
-                                onExpired={markTrialExpired}
-                              />
-                            )
-                          ) : license.unlimited ? (
-                            `${license.used} vagas reservadas · capacidade ilimitada`
-                          ) : (
-                            `${license.used} de ${license.limit} vagas reservadas`
-                          )}
-                        </p>
-                      </div>
-
-                      <div className="border-t border-white/10 pt-4 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
-                        <div className="flex items-center justify-between gap-3 text-xs">
-                          <span className="font-bold text-white/75">
-                            Vagas de servidor
-                          </span>
-                          <span className="font-minecraft-text text-sm font-bold text-white">
-                            {license.used}/
-                            {license.unlimited ? "∞" : license.limit}
-                          </span>
-                        </div>
-                        <meter
-                          className="sr-only"
-                          aria-label={
-                            license.unlimited
-                              ? `${license.used} vagas reservadas, capacidade ilimitada`
-                              : `${license.used} de ${license.limit} vagas reservadas`
-                          }
-                          min={0}
-                          max={
-                            license.unlimited
-                              ? Math.max(license.used, 1)
-                              : Math.max(displayLimit, 1)
-                          }
-                          value={
-                            license.unlimited
-                              ? license.used
-                              : Math.min(
-                                  license.used,
-                                  Math.max(displayLimit, 1),
-                                )
-                          }
-                        />
-                        <div
-                          aria-hidden="true"
-                          className="mt-3 grid h-2 gap-1"
-                          style={{
-                            gridTemplateColumns: `repeat(${slotCount}, minmax(0, 1fr))`,
-                          }}
-                        >
-                          {Array.from(
-                            { length: slotCount },
-                            (_, index) => index,
-                          ).map((slot) => (
-                            <span
-                              key={slot}
-                              className={
-                                slot < license.used
-                                  ? theme.activeSlot
-                                  : theme.capacityTrack
-                              }
-                            />
-                          ))}
-                        </div>
-                        <div
-                          className={`mt-3 h-1 w-full ${theme.capacityTrack}`}
-                          aria-hidden="true"
-                        >
-                          <div
-                            className={`h-full transition-[width] ${theme.progressFill}`}
-                            style={{ width: `${slotPercent}%` }}
-                          />
-                        </div>
-                        {license.expiresAt && license.plan !== "trial" && (
-                          <p className="mt-3 text-xs text-white/65">
-                            Válida até {formatDate(license.expiresAt)}
-                          </p>
+                        {trialExpired && (
+                          <Link
+                            href="/plans"
+                            className="license-card__expired-link"
+                          >
+                            Continue sua jornada com um plano{" "}
+                            <TbChevronRight size={13} aria-hidden="true" />
+                          </Link>
                         )}
                       </div>
+
+                      <LicenseCapacity
+                        used={license.used}
+                        limit={license.limit}
+                        unlimited={license.unlimited}
+                      >
+                        {license.expiresAt &&
+                          license.plan !== "trial" &&
+                          license.plan !== "monthly" && (
+                            <p className="mt-3 text-xs text-white/65">
+                              Válida até {formatDate(license.expiresAt)}
+                            </p>
+                          )}
+                      </LicenseCapacity>
                     </div>
 
                     <div className={theme.worldPanel}>
@@ -891,35 +829,135 @@ function LicensesPanel() {
                           ainda.
                         </p>
                       ) : (
-                        <div className="grid gap-2 px-3 pb-3 sm:px-4 sm:pb-4">
-                          {license.servers.map((server) => {
+                        <div className="license-card__server-list grid gap-2 px-3 pb-3 sm:px-4 sm:pb-4">
+                          {orderServers(license.servers).map((server) => {
                             const state = serverStates[server.state] ?? {
                               label: "Estado desconhecido",
                               classes:
                                 "border-white/15 bg-white/5 text-white/65",
                             };
-                            const isBusy = busyServerId === server.id;
+                            const isBusy =
+                              busyServerId === server.id ||
+                              profileSavingIds.has(server.id);
                             return (
                               <article
                                 key={server.id}
-                                className="border border-white/10 bg-black/20 p-3 sm:p-4"
+                                id={`server-${server.id}`}
+                                data-pinned={
+                                  server.state === "ACTIVE" &&
+                                  Boolean(server.pinned)
+                                }
+                                className="license-server border border-white/10 bg-black/20 p-3 sm:p-4"
                               >
                                 <div className="flex flex-wrap items-start justify-between gap-3">
-                                  <div className="min-w-0">
-                                    <h5 className="break-words text-sm font-bold text-white">
-                                      {server.name}
-                                    </h5>
-                                    <p className="mt-1 break-all font-mono text-[11px] text-white/65">
-                                      ID {server.serverId}
-                                    </p>
+                                  <div className="license-server__heading">
+                                    <span
+                                      className="license-server__block"
+                                      aria-hidden="true"
+                                    >
+                                      <ServerItemIcon icon={server.icon} />
+                                    </span>
+                                    <div className="min-w-0">
+                                      <h5 className="break-words text-sm font-bold text-white">
+                                        {serverDisplayName(server)}
+                                      </h5>
+                                      {server.pinned &&
+                                        server.state === "ACTIVE" && (
+                                          <span className="server-pinned-label">
+                                            <TbPin
+                                              size={11}
+                                              aria-hidden="true"
+                                            />
+                                            Fixado
+                                          </span>
+                                        )}
+                                      {server.displayName &&
+                                        server.displayName !== server.name && (
+                                          <p className="server-original-name">
+                                            Original: {server.name}
+                                          </p>
+                                        )}
+                                      <p className="mt-1 break-all font-mono text-[11px] text-white/65">
+                                        ID {server.serverId}
+                                      </p>
+                                    </div>
                                   </div>
-                                  <span
-                                    className={`inline-flex min-h-7 items-center border px-2.5 text-[10px] font-bold ${state.classes}`}
-                                  >
-                                    {state.label}
-                                  </span>
+                                  <div className="license-server__toolbar">
+                                    {server.state === "ACTIVE" && (
+                                      <>
+                                        <button
+                                          type="button"
+                                          className="server-pin-button"
+                                          disabled={isBusy}
+                                          aria-pressed={Boolean(server.pinned)}
+                                          aria-label={`${server.pinned ? "Desafixar" : "Fixar"} servidor ${serverDisplayName(server)}`}
+                                          title={
+                                            server.pinned
+                                              ? "Desafixar servidor"
+                                              : "Fixar no topo"
+                                          }
+                                          onClick={() =>
+                                            void togglePinned(server)
+                                          }
+                                        >
+                                          {profileSavingIds.has(server.id) ? (
+                                            <TbLoader2
+                                              className="animate-spin"
+                                              size={16}
+                                              aria-hidden="true"
+                                            />
+                                          ) : server.pinned ? (
+                                            <TbPinnedOff
+                                              size={16}
+                                              aria-hidden="true"
+                                            />
+                                          ) : (
+                                            <TbPin
+                                              size={16}
+                                              aria-hidden="true"
+                                            />
+                                          )}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="server-edit-button"
+                                          disabled={isBusy}
+                                          onClick={() =>
+                                            setEditingServer(server)
+                                          }
+                                          aria-label={`Editar identificação de ${serverDisplayName(server)}`}
+                                        >
+                                          <TbPencil
+                                            size={14}
+                                            aria-hidden="true"
+                                          />
+                                          Editar
+                                        </button>
+                                      </>
+                                    )}
+                                    <span
+                                      className={`inline-flex min-h-7 items-center border px-2.5 text-[10px] font-bold ${state.classes}`}
+                                    >
+                                      {state.label}
+                                    </span>
+                                  </div>
                                 </div>
 
+                                {pinErrors[server.id] && (
+                                  <p role="alert" className="server-pin-error">
+                                    {pinErrors[server.id]}
+                                  </p>
+                                )}
+                                {server.tags && server.tags.length > 0 && (
+                                  <ul
+                                    className="server-tags"
+                                    aria-label={`Tags de ${serverDisplayName(server)}`}
+                                  >
+                                    {server.tags.map((tag) => (
+                                      <li key={tag}>{tag}</li>
+                                    ))}
+                                  </ul>
+                                )}
                                 <div className="mt-3 grid gap-2 border-t border-white/8 pt-3 text-xs text-white/75 sm:grid-cols-2">
                                   <p>
                                     Minecraft{" "}
@@ -972,7 +1010,7 @@ function LicensesPanel() {
                                         onClick={() =>
                                           void act(server, "approve")
                                         }
-                                        className="inline-flex min-h-10 items-center justify-center gap-2 bg-[#a6cf74] px-3 text-xs font-bold text-[#17210f] transition hover:bg-[#c0e29d] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-wait disabled:opacity-50"
+                                        className="inline-flex min-h-10 items-center justify-center gap-2 bg-accent px-3 text-xs font-bold text-on-accent transition hover:bg-accent-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-wait disabled:opacity-50"
                                       >
                                         {isBusy && busyAction === "approve" ? (
                                           <TbLoader2
@@ -996,7 +1034,7 @@ function LicensesPanel() {
                                         onClick={() =>
                                           void act(server, "reject")
                                         }
-                                        className="min-h-10 border border-white/15 px-3 text-xs font-semibold text-white/80 transition hover:bg-white/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c9e9a8] disabled:cursor-wait disabled:opacity-50"
+                                        className="min-h-10 border border-white/15 px-3 text-xs font-semibold text-white/80 transition hover:bg-white/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-outline-strong disabled:cursor-wait disabled:opacity-50"
                                       >
                                         {isBusy && busyAction === "reject"
                                           ? "Rejeitando…"
@@ -1029,7 +1067,7 @@ function LicensesPanel() {
                                       type="button"
                                       disabled={isBusy}
                                       onClick={() => void act(server, "delete")}
-                                      className="min-h-10 border border-white/15 px-3 text-xs font-semibold text-white/70 transition hover:bg-white/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c9e9a8] disabled:cursor-wait disabled:opacity-50"
+                                      className="min-h-10 border border-white/15 px-3 text-xs font-semibold text-white/70 transition hover:bg-white/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-outline-strong disabled:cursor-wait disabled:opacity-50"
                                     >
                                       {isBusy && busyAction === "delete"
                                         ? "Apagando…"
@@ -1050,6 +1088,14 @@ function LicensesPanel() {
           )}
         </div>
       </section>
+      {editingServer && (
+        <ServerProfileEditor
+          key={editingServer.id}
+          server={editingServer}
+          onSave={(patch) => updateServerProfile(editingServer, patch)}
+          onClose={() => setEditingServer(null)}
+        />
+      )}
     </>
   );
 }
@@ -1167,7 +1213,7 @@ export function AccountPage() {
           <div
             role="alert"
             aria-live="assertive"
-            className="mb-5 flex items-center justify-between gap-4 border-l-4 border-amber-300 bg-[#211b0e] px-4 py-3 text-sm text-amber-100 shadow-[0_4px_0_#070b08]"
+            className="mb-5 flex items-center justify-between gap-4 border-l-4 border-amber-300 bg-warning-surface px-4 py-3 text-sm text-amber-100 shadow-[0_4px_0_var(--site-shadow)]"
           >
             <span>
               <strong className="font-minecraft-text mr-2">
@@ -1185,13 +1231,13 @@ export function AccountPage() {
           </div>
         )}
 
-        <header className="mx-auto mb-7 max-w-6xl border-b-2 border-[#687b5a]/50 pb-5 sm:mb-8 sm:pb-6">
+        <header className="mx-auto mb-7 max-w-6xl border-b-2 border-outline/50 pb-5 sm:mb-8 sm:pb-6">
           <div className="flex items-center gap-3 sm:gap-4">
-            <span className="grid size-12 shrink-0 place-items-center border-2 border-[#b5d58a]/45 bg-[#1b2c22] text-[#b9d59b] shadow-[inset_0_0_0_3px_rgba(10,18,12,0.7),0_4px_0_#080d09] sm:size-14">
+            <span className="grid size-12 shrink-0 place-items-center border-2 border-outline-strong/45 bg-surface-raised text-accent-soft shadow-[inset_0_0_0_3px_color-mix(in_srgb,var(--site-background)_70%,transparent),0_4px_0_var(--site-shadow)] sm:size-14">
               <TbBlocks aria-hidden="true" className="size-6 sm:size-7" />
             </span>
             <div className="min-w-0">
-              <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.22em] text-[#a6cf74] sm:text-xs">
+              <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.22em] text-accent sm:text-xs">
                 PluginsX <span className="text-white/35">/</span> Central de
                 mundos
               </p>
@@ -1203,29 +1249,29 @@ export function AccountPage() {
               </h1>
             </div>
             {session && (
-              <span className="ml-auto hidden items-center gap-2 border border-[#718667]/35 bg-[#101811] px-3 py-2 text-[10px] font-bold uppercase tracking-[0.12em] text-[#b9d59b] sm:inline-flex">
-                <span className="size-1.5 bg-[#8bc34a]" aria-hidden="true" />{" "}
+              <span className="ml-auto hidden items-center gap-2 border border-outline/35 bg-surface px-3 py-2 text-[10px] font-bold uppercase tracking-[0.12em] text-accent-soft sm:inline-flex">
+                <span className="size-1.5 bg-accent" aria-hidden="true" />{" "}
                 Sessão conectada
               </span>
             )}
           </div>
           <p className="mt-4 max-w-3xl text-sm leading-6 text-white/70 sm:ml-16">
             {session
-              ? "Gerencie suas licenças e decida quais servidores podem entrar no seu mundo."
-              : "Entre para administrar suas licenças e os servidores conectados ao PluginsX."}
+              ? "Consulte suas keys e aprove ou revogue o acesso de cada instalação."
+              : "Entre para recuperar suas keys e administrar as instalações autorizadas."}
           </p>
           <div
             aria-hidden="true"
             className="mt-5 grid h-2 grid-cols-8 overflow-hidden"
           >
-            <span className="bg-[#709c4b]" />
-            <span className="bg-[#8ab95d]" />
-            <span className="bg-[#709c4b]" />
+            <span className="bg-accent-strong" />
+            <span className="bg-accent" />
+            <span className="bg-accent-strong" />
             <span className="bg-[#714c32]" />
             <span className="bg-[#8a5c39]" />
             <span className="bg-[#714c32]" />
-            <span className="bg-[#111a16]" />
-            <span className="bg-[#111a16]" />
+            <span className="bg-surface" />
+            <span className="bg-surface" />
           </div>
         </header>
 
@@ -1235,28 +1281,28 @@ export function AccountPage() {
             aria-live="polite"
           >
             <TbLoader2
-              className="size-5 animate-spin text-[#b4d991]"
+              className="size-5 animate-spin text-accent-soft"
               aria-hidden="true"
             />
             Conferindo a sessão…
           </output>
         ) : session ? (
           <div className="mx-auto max-w-6xl">
-            <section className="mb-6 grid overflow-hidden border-2 border-[#718667]/40 bg-[#111a16] shadow-[0_6px_0_#070b08] md:grid-cols-[minmax(0,1fr)_auto]">
+            <section className="mb-6 grid overflow-hidden border-2 border-outline/40 bg-surface shadow-[0_6px_0_var(--site-shadow)] md:grid-cols-[minmax(0,1fr)_auto]">
               <div className="flex min-w-0 items-center gap-4 p-4 sm:p-5">
                 {session.user.image ? (
                   <span
                     aria-hidden="true"
-                    className="size-14 shrink-0 rounded-full border-2 border-[#a6cf74]/45 bg-cover bg-center shadow-[0_0_24px_rgba(166,207,116,0.15)] sm:size-16"
+                    className="size-14 shrink-0 rounded-full border-2 border-outline-strong/45 bg-cover bg-center shadow-[0_0_24px_color-mix(in_srgb,var(--site-accent)_15%,transparent)] sm:size-16"
                     style={{ backgroundImage: `url("${session.user.image}")` }}
                   />
                 ) : (
-                  <span className="grid size-14 shrink-0 place-items-center border-2 border-[#a6cf74]/30 bg-[#a6cf74]/10 text-[#c9e9a8] sm:size-16">
+                  <span className="grid size-14 shrink-0 place-items-center border-2 border-outline-strong/30 bg-accent/10 text-accent-soft sm:size-16">
                     <TbUserCircle className="size-9" aria-hidden="true" />
                   </span>
                 )}
                 <div className="min-w-0">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#a6cf74]">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-accent">
                     Operador autenticado
                   </p>
                   <h2 className="font-minecraft-text mt-1 truncate text-lg font-bold text-white sm:text-xl">
@@ -1267,10 +1313,10 @@ export function AccountPage() {
                   </p>
                 </div>
               </div>
-              <div className="flex items-center border-t border-[#718667]/30 bg-black/15 p-4 md:border-l md:border-t-0 sm:p-5">
+              <div className="flex items-center border-t border-outline/30 bg-black/15 p-4 md:border-l md:border-t-0 sm:p-5">
                 <Link
                   href="/plans"
-                  className="font-minecraft-text inline-flex min-h-11 w-full items-center justify-center gap-2 border-b-4 border-[#345d2f] bg-[#5e9b43] px-4 text-xs font-bold text-white transition hover:bg-[#6eaa4d] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white md:w-auto"
+                  className="font-minecraft-text inline-flex min-h-11 w-full items-center justify-center gap-2 border-b-4 border-accent-edge bg-accent-strong px-4 text-xs font-bold text-white transition hover:bg-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white md:w-auto"
                 >
                   Gerenciar acesso{" "}
                   <TbChevronRight size={16} aria-hidden="true" />
@@ -1283,22 +1329,22 @@ export function AccountPage() {
             <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-4 text-xs text-white/65">
               <p className="inline-flex items-center gap-2">
                 <TbShieldCheck
-                  className="size-4 text-[#b9d59b]"
+                  className="size-4 text-accent-soft"
                   aria-hidden="true"
                 />
                 Sua sessão é protegida pelo provedor escolhido.
               </p>
               <Link
                 href="/"
-                className="inline-flex min-h-10 items-center gap-2 font-semibold text-[#c9e9a8] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c9e9a8]"
+                className="inline-flex min-h-10 items-center gap-2 font-semibold text-accent-soft hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-outline-strong"
               >
                 <TbArrowLeft size={15} aria-hidden="true" /> Voltar ao catálogo
               </Link>
             </div>
           </div>
         ) : (
-          <section className="mx-auto grid max-w-5xl overflow-hidden border-2 border-[#718667]/40 bg-[#111a16] shadow-[0_8px_0_#070b08,0_24px_70px_-40px_rgba(35,77,45,0.75)] md:grid-cols-[minmax(0,1fr)_minmax(18rem,0.85fr)]">
-            <div className="order-2 relative flex min-h-64 flex-col justify-between overflow-hidden border-t border-[#718667]/25 bg-[linear-gradient(145deg,#1b2c22,#111a16)] p-5 sm:p-7 md:order-1 md:border-r md:border-t-0">
+          <section className="mx-auto grid max-w-5xl overflow-hidden border-2 border-outline/40 bg-surface shadow-[0_8px_0_var(--site-shadow),0_24px_70px_-40px_color-mix(in_srgb,var(--site-accent-strong)_25%,transparent)] md:grid-cols-[minmax(0,1fr)_minmax(18rem,0.85fr)]">
+            <div className="order-2 relative flex min-h-64 flex-col justify-between overflow-hidden border-t border-outline/25 bg-[linear-gradient(145deg,var(--site-surface-raised),var(--site-surface))] p-5 sm:p-7 md:order-1 md:border-r md:border-t-0">
               <div
                 aria-hidden="true"
                 className="pointer-events-none absolute -bottom-16 -right-8 grid size-56 rotate-12 grid-cols-4 gap-2 opacity-20"
@@ -1308,37 +1354,37 @@ export function AccountPage() {
                     key={tile}
                     className={
                       tile % 3 === 0
-                        ? "border border-[#b9d59b]"
-                        : "bg-[#8bc34a]/20"
+                        ? "border border-outline-strong"
+                        : "bg-accent/20"
                     }
                   />
                 ))}
               </div>
               <Link
                 href="/"
-                className="relative inline-flex min-h-10 w-fit items-center gap-2 text-sm font-semibold text-white/75 transition hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#b2d78c]"
+                className="relative inline-flex min-h-10 w-fit items-center gap-2 text-sm font-semibold text-white/75 transition hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-outline-strong"
               >
                 <TbArrowLeft size={16} aria-hidden="true" /> Voltar ao catálogo
               </Link>
               <div className="relative my-7">
-                <span className="grid size-12 place-items-center border border-[#b4d991]/25 bg-[#a6cf74]/10 text-[#c5e4a5]">
+                <span className="grid size-12 place-items-center border border-outline-strong/25 bg-accent/10 text-accent-soft">
                   <TbPick size={24} aria-hidden="true" />
                 </span>
-                <p className="mt-4 text-[10px] font-bold uppercase tracking-[0.2em] text-[#b4d991]">
+                <p className="mt-4 text-[10px] font-bold uppercase tracking-[0.2em] text-accent-soft">
                   Acesso do operador
                 </p>
                 <h2 className="font-minecraft-text mt-2 max-w-sm text-2xl font-black leading-tight text-white sm:text-3xl">
-                  Seus mundos começam aqui.
+                  Volte direto à sua operação.
                 </h2>
                 <p className="mt-3 max-w-md text-sm leading-6 text-white/70">
-                  Use GitHub ou Discord para recuperar suas keys, revisar
-                  pedidos e liberar os servidores que você controla.
+                  Entre para recuperar keys, responder a pedidos de acesso e
+                  controlar as instalações vinculadas à sua conta.
                 </p>
               </div>
               <p className="relative flex items-center gap-2 text-xs text-white/65">
                 <TbShieldCheck
                   size={16}
-                  className="text-[#a6cf74]"
+                  className="text-accent"
                   aria-hidden="true"
                 />
                 Sua senha nunca é compartilhada com o PluginsX.
@@ -1346,22 +1392,18 @@ export function AccountPage() {
             </div>
 
             <div className="order-1 flex flex-col justify-center p-5 sm:p-7 md:order-2 md:p-8">
-              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#a6cf74]">
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-accent">
                 Entrar na conta
               </p>
               <h3 className="font-minecraft-text mt-2 text-xl font-bold text-white sm:text-2xl">
                 Escolha como entrar
               </h3>
-              <p className="mt-3 text-sm leading-6 text-white/70">
-                Autorize o acesso no provedor escolhido e você retornará ao
-                PluginsX ao terminar.
-              </p>
 
               <button
                 type="button"
                 onClick={() => void signInWith("github")}
                 disabled={isSigningIn || !apiUrl}
-                className="font-minecraft-text mt-6 inline-flex min-h-12 w-full items-center justify-center gap-3 border-b-4 border-[#345d2f] bg-[#5e9b43] px-5 text-sm font-bold text-white shadow-[0_5px_18px_rgba(71,134,55,0.18)] transition hover:bg-[#6eaa4d] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-wait disabled:opacity-55"
+                className="font-minecraft-text mt-6 inline-flex min-h-12 w-full items-center justify-center gap-3 border-b-4 border-accent-edge bg-accent-strong px-5 text-sm font-bold text-white shadow-[0_5px_18px_color-mix(in_srgb,var(--site-accent)_18%,transparent)] transition hover:bg-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-wait disabled:opacity-55"
               >
                 {isSigningIn ? (
                   <TbLoader2

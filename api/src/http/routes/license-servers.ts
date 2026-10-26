@@ -8,7 +8,9 @@ import { PlanPurchase } from "../../database/models/PlanPurchase.js";
 import { authSessionPlugin } from "../plugins/better-auth.js";
 import { getServerLimitForPlan } from "../plugins/billing-config.js";
 import { view } from "../plugins/license.js";
-import { getPaidPlan } from "../plugins/plan-access.js";
+import { getPaidPlan, hasTrustedWebOrigin } from "../plugins/plan-access.js";
+import { getMonthlyBilling } from "../plugins/monthly-billing.js";
+import { serverIconIds, serverProfileUpdate, updateAuthorizedServerProfile } from "../../domain/server-profile.js";
 
 type LicensePlan = "trial" | "monthly" | "lifetime" | "aether" | null;
 
@@ -117,13 +119,14 @@ const serverInfo = z.object({
   pluginVersion: z.string().max(40).default("unknown"),
 });
 
-const publicRecord = (record: any) => ({
+const publicRecord = (record: any, accountView = false) => ({
   id: record._id, serverId: record.serverId,
   name: record.name, minecraftVersion: record.minecraftVersion,
   implementation: record.implementation, implementationVersion: record.implementationVersion,
   pluginVersion: record.pluginVersion, state: record.state,
   createdAt: record.createdAt, expiresAt: record.expiresAt, lastValidatedAt: record.lastValidatedAt ?? null,
   connection: "UNKNOWN" as const,
+  ...(accountView ? { displayName: record.displayName ?? "", tags: record.tags ?? [], icon: serverIconIds.includes(record.icon) ? record.icon : "grass", pinned: Boolean(record.pinned) } : {}),
 });
 
 export const licenseServerRoutes = new Elysia({ prefix: "/license" })
@@ -220,16 +223,18 @@ export const licenseServerRoutes = new Elysia({ prefix: "/license" })
       await enforceServerLimit(license._id, capacity.limit, now);
     }
     const records = await LicenseServer.find({ licenseId: { $in: licenses.map((item) => item._id) } }).sort({ createdAt: -1 }).lean();
+    const billing = [...licenseLimits.values()].some((item) => item.plan === "monthly") ? await getMonthlyBilling(user.id) : null;
     return Promise.all(licenses.map(async (license) => {
       const { plan, limit, unlimited } = licenseLimits.get(license._id) ?? { plan: null, limit: 0, unlimited: false };
       const currentLicense = await License.findById(license._id).select({ serverSlots: 1 }).lean();
       return {
         id: accountLicenseRef(license._id), tier: license.value.tier, valid: license.value.valid, plan,
         expiresAt: license.expiresAt ?? null,
+        billing: plan === "monthly" ? billing : null,
         used: currentLicense?.serverSlots ?? 0,
         limit: license.value.tier === "plus" ? unlimited ? null : limit : 0,
         unlimited: license.value.tier === "plus" && unlimited,
-        servers: records.filter((record) => record.licenseId === license._id).map(publicRecord),
+        servers: records.filter((record) => record.licenseId === license._id).map((record) => publicRecord(record, true)),
       };
     }));
   }, { auth: true, detail: { summary: "List current user's licenses and servers", tags: ["License"] } })
@@ -256,7 +261,19 @@ export const licenseServerRoutes = new Elysia({ prefix: "/license" })
     body: z.object({ licenseRef: z.string().regex(/^[a-f0-9]{64}$/i) }),
     detail: { summary: "Reveal an owned license key on demand", tags: ["License"] },
   })
-  .post("/servers/:id/:action", async ({ user, params, status }) => {
+  .patch("/servers/:id/appearance", async ({ user, params, body, request, status }) => {
+    if (!hasTrustedWebOrigin(request)) return status(403, { message: "Origem da solicitação não permitida." });
+    const result = await updateAuthorizedServerProfile(user.id, params.id, body, {
+      findServer: async (id) => LicenseServer.findById(id).select({ _id: 1, licenseId: 1, state: 1 }).lean(),
+      ownsLicense: async (userId, licenseId) => Boolean(await License.exists({ _id: licenseId, ownerId: userId, "value.tier": "plus" })),
+      ownsLiveTrial: async (userId, licenseId) => Boolean(await PlanAccess.exists({ userId, trialLicenseCode: licenseId, trialLicenseExpiresAt: { $gt: new Date() } })),
+      updateActiveServer: async (id, licenseId, patch) => LicenseServer.findOneAndUpdate({ _id: id, licenseId, state: "ACTIVE" }, { $set: patch }, { new: true, runValidators: true }).lean(),
+    });
+    if (!result.ok) return status(result.status, { message: result.message });
+    return publicRecord(result.server, true);
+  }, { auth: true, params: z.object({ id: z.string().uuid() }), body: serverProfileUpdate, detail: { summary: "Customize an owned authorized server", tags: ["License"] } })
+  .post("/servers/:id/:action", async ({ user, params, status, request }) => {
+    if (!hasTrustedWebOrigin(request)) return status(403, { message: "Origem da solicitação não permitida." });
     if (!["approve", "reject", "remove", "delete"].includes(params.action)) return status(400, { message: "Invalid action" });
     const record = await LicenseServer.findById(params.id);
     if (!record) return status(404, { message: "Server activation not found" });
@@ -270,6 +287,7 @@ export const licenseServerRoutes = new Elysia({ prefix: "/license" })
     if (params.action === "approve") {
       const license = await License.findById(record.licenseId).lean();
       if (!license) return status(404, { message: "License not found" });
+      if (!(await view(license._id)).valid) return status(403, { message: "License is no longer active" });
       const plan = await planForLicense(license);
       await enforceServerLimit(license._id, await serverLimitForLicense(license, plan));
       const refreshed = await LicenseServer.findById(record._id);

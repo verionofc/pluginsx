@@ -6,8 +6,8 @@ PluginsX é um projeto para servidores Minecraft **PaperMC**. O repositório re�
 
 ## O que faz parte do projeto
 
-- **Website:** catálogo para consultar versões e baixar plugins, além da interface para gerar uma chave de acesso.
-- **API:** fornece o catálogo PaperMC, filtra releases, entrega os arquivos JAR e gerencia a licença padrão do PluginsX.
+- **Website:** planos, carrinho com cupons, conta com inventário de licenças e servidores, personalização visual e painel do proprietário.
+- **API:** catálogo e downloads PaperMC, OAuth, licenças, autorizações de servidores, cobrança Mercado Pago e cupons com limites transacionais.
 - **SpawnerX:** plugin PaperMC para administrar spawners, com loja, melhorias, raridades e vendas públicas por XP.
 - **Catálogo de releases:** índices JSON e JARs publicados em `builds/`, consumidos pela API.
 
@@ -30,7 +30,8 @@ PluginsX é um projeto para servidores Minecraft **PaperMC**. O repositório re�
 - [Bun](https://bun.sh/) para instalar dependências e executar a API e o site.
 - Java 25 recomendado para validar e compilar a matriz atual do SpawnerX. O Gradle usa toolchains para os alvos e pode baixar o JDK necessário.
 - Uma instância MongoDB Atlas para executar a API. `MONGODB_URI` precisa usar o formato `mongodb+srv://`.
-- Credenciais de uma aplicação Discord para as variáveis obrigatórias de configuração da API.
+- Credenciais OAuth do GitHub. Discord é opcional e exige as duas credenciais configuradas.
+- Credenciais Mercado Pago para iniciar checkouts e receber webhooks de pagamento.
 
 ## Executar localmente
 
@@ -49,18 +50,18 @@ Crie `api/.env.development.local` com os valores abaixo:
 
 ```dotenv
 BETTER_AUTH_SECRET=0123456789abcdef0123456789abcdef
-BETTER_AUTH_URL=http://localhost:3333
 BETTER_AUTH_DOMAIN=localhost
 DEFAULT_PORT=3333
-DISCORD_CLIENT_ID=seu-client-id
-DISCORD_CLIENT_SECRET=seu-client-secret
-URL=http://localhost:3333
+GITHUB_CLIENT_ID=seu-client-id
+GITHUB_CLIENT_SECRET=seu-client-secret
+URL=http://localhost:3000
 DEV_URL=http://localhost:3000
+NEXT_PUBLIC_APP_URL=http://localhost:3000
 MONGODB_URI=mongodb+srv://usuario:senha@cluster.exemplo.mongodb.net/?retryWrites=true&w=majority
 MONGODB_DB_NAME=pluginsx
 ```
 
-`BETTER_AUTH_SECRET` deve ter exatamente 32 caracteres. `BETTER_AUTH_DOMAIN` é opcional; `DEFAULT_PORT` assume `3333` quando omitida. A API conecta ao MongoDB antes de começar a escutar a porta.
+`BETTER_AUTH_SECRET` precisa ter pelo menos 32 caracteres; substitua o valor ilustrativo por um segredo aleatório. `BETTER_AUTH_DOMAIN` é opcional; `DEFAULT_PORT` assume `3333`. A API conecta ao MongoDB antes de escutar a porta. Cadastre `http://localhost:3000/auth/callback/github` no aplicativo OAuth. `URL` e `DEV_URL` representam a origem do site; a porta `3333` é apenas da API. Consulte [`api/.env.example`](api/.env.example) para as variáveis de cobrança.
 
 Inicie o servidor:
 
@@ -140,9 +141,12 @@ A tarefa compartilhada `plugins/gradle/plugin-catalog.gradle.kts` recompõe `bui
 Execute os comandos a partir da raiz do repositório:
 
 ```bash
-(cd api && bun run typecheck && bun run build)
-(cd website && bun run lint && bun run build)
+(cd api && bun run typecheck && bun test src && bun run build && bun audit)
+(cd website && bun run lint && bun test lib && bun run build && bun audit)
+(cd plugins/SpawnerX && ./gradlew check)
 ```
+
+A revisão técnica, os testes de integração opcionais e os limites da validação estão em [`docs/REVISAO_PROJETO.md`](docs/REVISAO_PROJETO.md).
 
 ## Licença
 

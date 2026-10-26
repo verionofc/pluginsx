@@ -1,0 +1,1203 @@
+/** Licenças como interfaces de inventário: blocos, materiais e dioramas por dimensão. */
+.license-card {
+  --license-accent: var(--site-accent);
+  --license-soft: var(--site-accent-soft);
+  --license-deep: #17221b;
+  --license-rim: #45533f;
+  --license-lit: #89927b;
+  --license-shadow: #070b08;
+  --license-soil: #60442e;
+  --license-panel: #182019;
+  --license-button: #363d33;
+  --license-line: color-mix(in srgb, var(--license-accent) 25%, transparent);
+  position: relative;
+  isolation: isolate;
+  min-width: 0;
+  overflow: hidden;
+  border: 3px solid var(--license-rim);
+  background: color-mix(
+    in srgb,
+    var(--site-surface-deep) 75%,
+    var(--license-panel)
+  );
+  color: var(--site-text);
+  box-shadow:
+    inset 2px 2px 0 var(--license-lit),
+    inset -2px -2px 0 var(--license-shadow),
+    0 6px 0 var(--license-shadow),
+    3px 0 0 var(--license-shadow),
+    -3px 0 0 var(--license-shadow);
+}
+.license-card::after {
+  content: "";
+  position: absolute;
+  z-index: 3;
+  inset: 3px;
+  pointer-events: none;
+  border: 1px solid color-mix(in srgb, var(--license-lit) 24%, transparent);
+}
+.license-identity {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  padding: 20px 24px 0;
+  border-bottom: 4px solid var(--license-rim);
+  background: var(--license-deep);
+  box-shadow: inset 0 2px 0
+    color-mix(in srgb, var(--license-lit) 40%, transparent);
+}
+.license-identity__topline {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.license-identity__collection {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--license-soft);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  text-shadow: 1px 1px #000;
+}
+.license-identity__collection > span {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 2px solid var(--license-shadow);
+  background: var(--license-rim);
+  box-shadow:
+    inset 1px 1px 0 var(--license-lit),
+    inset -1px -1px 0 #0006;
+  color: var(--license-soft);
+  font-family: var(--font-minecraft), monospace;
+  font-size: 9px;
+}
+.license-identity__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 4px 9px;
+  border: 1px solid #223f29;
+  background: #102216ed;
+  box-shadow:
+    inset 0 1px 0 #a9dbb324,
+    0 2px 0 #0005;
+  color: #c1ebc9;
+  font-size: 10px;
+  font-weight: 600;
+}
+.license-identity__status[data-usable="false"] {
+  border-color: #73414a;
+  background: #321820;
+  color: #ffc1c8;
+}
+.license-identity__composition {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  align-items: center;
+  min-height: 220px;
+  gap: 18px;
+}
+.license-identity__copy {
+  position: relative;
+  z-index: 2;
+  min-width: 0;
+  padding: 20px 0 28px;
+}
+.license-identity__eyebrow {
+  margin-bottom: 11px;
+  color: var(--license-accent);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  text-shadow: 1px 1px #0009;
+}
+.license-identity h3 {
+  color: var(--license-soft);
+  font-family: var(--font-minecraft), monospace;
+  font-size: clamp(1.6rem, 3.3vw, 2.5rem);
+  font-weight: 700;
+  line-height: 1.35;
+  letter-spacing: -0.04em;
+  overflow-wrap: anywhere;
+  text-shadow: 3px 3px 0 #0009;
+}
+.license-identity__description {
+  max-width: 390px;
+  margin-top: 12px;
+  color: #d0d2c9;
+  font-size: 12px;
+  line-height: 1.75;
+  text-shadow: 1px 1px #0009;
+}
+.license-identity__art {
+  position: relative;
+  align-self: stretch;
+  display: grid;
+  min-width: 0;
+  min-height: 195px;
+  place-items: center;
+}
+.license-identity__image {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 330px;
+  height: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 8px 0 #0003);
+  transition: transform 180ms ease;
+}
+.license-card:hover .license-identity__image {
+  transform: translateY(-4px);
+}
+.license-card[data-license-state="inactive"] .license-identity__image {
+  opacity: 0.5;
+  filter: saturate(0.4);
+}
+.license-card[data-license-state="inactive"] .license-world {
+  opacity: 0.45;
+}
+.license-identity__footer {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 42px;
+  border-top: 2px solid var(--license-shadow);
+  box-shadow: inset 0 1px 0 #ffffff0c;
+  color: var(--license-accent);
+  font-size: 9px;
+}
+.license-identity__footer > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 600;
+}
+.license-identity__reference {
+  color: #aab1a4;
+  font-family: monospace;
+  font-size: 9px;
+  letter-spacing: 0.07em;
+}
+
+/** O cenário permanece atrás das informações da licença. */
+.license-world {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.license-world__landscape {
+  position: absolute;
+  bottom: 40px;
+  right: 0;
+  width: 78%;
+  height: calc(100% - 40px);
+  opacity: 0.8;
+  mask-image: linear-gradient(90deg, transparent, #000 35%);
+}
+.license-world__particles {
+  position: absolute;
+  inset: 0;
+  opacity: 0.65;
+}
+.license-world__particles i {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  background: var(--license-accent);
+  box-shadow: 3px 0 #ffffff15;
+  animation: license-particle-drift 7s steps(6, end) infinite;
+}
+.license-world__particles i:nth-child(1) {
+  top: 20%;
+  right: 12%;
+  animation-delay: -2s;
+}
+.license-world__particles i:nth-child(2) {
+  top: 39%;
+  right: 39%;
+  animation-delay: -5s;
+}
+.license-world__particles i:nth-child(3) {
+  top: 65%;
+  right: 7%;
+  animation-delay: -3s;
+}
+.license-world__particles i:nth-child(4) {
+  top: 13%;
+  right: 31%;
+  animation-delay: -6s;
+}
+.license-world__particles i:nth-child(5) {
+  top: 73%;
+  right: 30%;
+  animation-delay: -1s;
+}
+.license-world__particles i:nth-child(6) {
+  top: 50%;
+  right: 21%;
+  animation-delay: -4s;
+}
+@keyframes license-particle-drift {
+  0%,
+  100% {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  35%,
+  70% {
+    opacity: 0.7;
+  }
+  90% {
+    opacity: 0;
+    transform: translateY(-13px);
+  }
+}
+
+/** A key e os servidores usam as molduras em relevo do inventário. */
+.license-card__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(230px, 0.75fr);
+  gap: 24px;
+  padding: 24px;
+  background:
+    repeating-conic-gradient(#ffffff02 0% 25%, transparent 0% 50%) 0 0 / 8px 8px;
+}
+.license-card__credentials {
+  min-width: 0;
+}
+.license-card__section-label {
+  color: var(--license-soft);
+  font-family: var(--font-minecraft), monospace;
+  font-size: 8px;
+  line-height: 1.7;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.license-card__key-field {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 54px;
+  padding: 8px 10px;
+  border: 2px solid var(--license-shadow);
+  box-shadow:
+    inset 2px 2px 0 #0008,
+    inset -2px -2px 0 #ffffff10;
+  background: #0004;
+  color: var(--license-soft);
+  font-family: monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+.license-card__key-item {
+  display: grid;
+  flex-shrink: 0;
+  width: 29px;
+  height: 29px;
+  place-items: center;
+  border: 1px solid #ffffff0e;
+  background: #0003;
+  color: #ddc277;
+  user-select: none;
+}
+.license-card__key-item svg {
+  width: 19px;
+  height: 19px;
+  image-rendering: pixelated;
+}
+.license-mc-button {
+  border: 2px solid var(--license-shadow);
+  border-radius: 0;
+  background: var(--license-button);
+  box-shadow:
+    inset 2px 2px 0 #ffffff20,
+    inset -2px -2px 0 #0007,
+    0 2px 0 #0005;
+  color: #edf0e7;
+  text-shadow: 1px 1px #000;
+}
+.license-mc-button:hover:not(:disabled) {
+  background: color-mix(
+    in srgb,
+    var(--license-button) 80%,
+    var(--license-accent)
+  );
+  color: white;
+}
+.license-mc-button:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow:
+    inset 2px 2px 0 #0006,
+    inset -1px -1px 0 #ffffff15;
+}
+.license-mc-button[aria-pressed="true"] {
+  border-color: var(--license-accent);
+}
+.license-card button:focus-visible,
+.license-card a:focus-visible {
+  outline-color: var(--license-accent);
+}
+.license-card__capacity {
+  min-width: 0;
+  border-left: 2px solid var(--license-shadow);
+  padding-left: 24px;
+}
+.license-card__slots {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(34px, 1fr));
+  gap: 5px;
+  margin-top: 13px;
+}
+.license-card__slots > span {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  min-width: 0;
+  min-height: 39px;
+  place-items: center;
+  border: 2px solid var(--license-shadow);
+  box-shadow:
+    inset 2px 2px 0 #0008,
+    inset -2px -2px 0 #ffffff20;
+}
+.license-card__track {
+  background: color-mix(in srgb, var(--license-rim) 45%, #111613);
+}
+.license-card__slot--active {
+  background: color-mix(
+    in srgb,
+    var(--license-accent) 16%,
+    var(--license-panel)
+  );
+}
+.license-inventory-block {
+  position: relative;
+  display: block;
+  width: 22px;
+  height: 24px;
+  background:
+    linear-gradient(155deg, var(--license-accent) 0 34%, transparent 34%),
+    linear-gradient(30deg, var(--license-soil) 0 50%, var(--license-rim) 50%);
+  clip-path: polygon(0 25%, 50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%);
+  opacity: 0.12;
+}
+.license-card__slot--active .license-inventory-block {
+  opacity: 1;
+  filter: drop-shadow(1px 2px #0008);
+}
+.license-card__fill {
+  background: var(--license-accent);
+  box-shadow:
+    inset 0 1px #ffffff60,
+    inset 0 -1px #0006;
+}
+.license-card__accent {
+  color: var(--license-accent);
+}
+.license-card__worlds {
+  border-top: 3px solid var(--license-rim);
+  background: color-mix(
+    in srgb,
+    var(--site-surface-deep) 90%,
+    var(--license-panel)
+  );
+  box-shadow: inset 0 1px 0 #ffffff13;
+}
+.license-card__world-count {
+  border: 2px solid var(--license-shadow);
+  box-shadow:
+    inset 1px 1px 0 #ffffff16,
+    inset -1px -1px 0 #0004;
+  background: var(--license-rim);
+  color: var(--license-soft);
+}
+.license-card__expired-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 12px;
+  color: var(--license-soft);
+  font-size: 11px;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.license-server {
+  min-width: 0;
+  border: 2px solid var(--license-shadow);
+  background: color-mix(in srgb, var(--site-surface) 75%, var(--license-panel));
+  box-shadow:
+    inset 1px 1px 0 #ffffff0d,
+    inset -1px -1px 0 #0004;
+}
+.license-server__heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+.license-server__block {
+  display: grid;
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 2px solid var(--license-shadow);
+  background: #0002;
+  box-shadow:
+    inset 1px 1px 0 #0008,
+    inset -1px -1px 0 #ffffff1c;
+}
+.license-server__block svg {
+  width: 28px;
+  height: 28px;
+}
+.license-server button {
+  border-radius: 0;
+  box-shadow:
+    inset 1px 1px 0 #ffffff14,
+    inset -1px -1px 0 #0005,
+    0 2px 0 #0004;
+}
+
+/** Trial: madeira, grama, mapa e selo de passagem. */
+.license-card[data-license-plan="trial"] {
+  --license-accent: #dfbd79;
+  --license-soft: #f5dfad;
+  --license-deep: #25271b;
+  --license-rim: #79613c;
+  --license-lit: #bda06b;
+  --license-shadow: #16110b;
+  --license-soil: #775034;
+  --license-panel: #252016;
+  --license-button: #4c4432;
+  border-color: #6b5031;
+}
+[data-license-plan="trial"] .license-identity {
+  padding-left: 36px;
+  background: linear-gradient(105deg, #242218, #1c281d);
+}
+[data-license-plan="trial"] .license-identity::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 10px;
+  width: 8px;
+  background: repeating-linear-gradient(
+    180deg,
+    #b1935a77 0 8px,
+    #332b1d 8px 12px
+  );
+  border-left: 2px solid #0a0c07;
+  border-right: 2px solid #a78a4b44;
+}
+[data-license-plan="trial"] .license-identity__composition {
+  grid-template-columns: minmax(0, 1fr) 230px;
+  min-height: 205px;
+}
+[data-license-plan="trial"] .license-identity__image {
+  max-width: 240px;
+  transform: rotate(-7deg);
+}
+[data-license-plan="trial"]:hover .license-identity__image {
+  transform: rotate(-4deg) translateY(-3px);
+}
+.license-identity__countdown {
+  display: inline-block;
+  margin-top: 15px;
+  padding: 9px 12px;
+  border: 2px solid var(--license-shadow);
+  box-shadow:
+    inset 1px 1px #ffffff20,
+    0 2px #0005;
+  background: #352d1be0;
+  color: #ffe2a7;
+  font-family: monospace;
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.license-ticket-stamp {
+  position: absolute;
+  z-index: 2;
+  right: 3px;
+  top: 14px;
+  display: grid;
+  place-content: center;
+  width: 44px;
+  height: 44px;
+  border: 2px solid #cfb27466;
+  box-shadow: inset 0 0 0 2px #1a2012;
+  transform: rotate(5deg);
+  color: #e5c689;
+  font-family: var(--font-minecraft), monospace;
+  font-size: 8px;
+  line-height: 1.5;
+  text-align: center;
+}
+[data-license-plan="trial"] .license-world__landscape {
+  width: 70%;
+  opacity: 0.55;
+  mask-image: linear-gradient(90deg, transparent, #000 65%);
+}
+[data-license-plan="monthly"] .license-world__landscape {
+  width: 72%;
+  opacity: 0.6;
+  mask-image: linear-gradient(90deg, transparent, #000 55%);
+}
+
+/** Creeper: baú de inventário, redstone e estruturas de pedra musgosa. */
+.license-card[data-license-plan="monthly"] {
+  --license-accent: #a4d77b;
+  --license-soft: #e2f3cb;
+  --license-deep: #16251b;
+  --license-rim: #4e693e;
+  --license-lit: #9bb381;
+  --license-shadow: #09100a;
+  --license-soil: #785334;
+  --license-panel: #15241b;
+  --license-button: #35462e;
+  border-width: 4px;
+}
+[data-license-plan="monthly"] .license-identity {
+  background: linear-gradient(105deg, #102019, #182c1b);
+  border-bottom-width: 7px;
+}
+[data-license-plan="monthly"] .license-identity__composition {
+  grid-template-columns: minmax(0, 1fr) 300px;
+}
+[data-license-plan="monthly"] .license-identity h3 {
+  text-transform: uppercase;
+  font-size: clamp(1.8rem, 3.5vw, 2.6rem);
+}
+[data-license-plan="monthly"] .license-identity__footer::after {
+  content: "";
+  position: absolute;
+  bottom: 1px;
+  left: 50%;
+  width: 17px;
+  height: 22px;
+  border: 3px solid #161a0c;
+  background: #c5a650;
+  box-shadow:
+    inset 2px 2px #ebd684,
+    inset -2px -2px #76602d;
+  transform: translateX(-50%);
+}
+.license-vault-face {
+  position: absolute;
+  right: 12px;
+  width: 112px;
+  height: 132px;
+  opacity: 0.12;
+  background:
+    linear-gradient(#a8d17e, #a8d17e) 0 10% / 33% 26% no-repeat,
+    linear-gradient(#a8d17e, #a8d17e) 100% 10% / 33% 26% no-repeat,
+    linear-gradient(#a8d17e, #a8d17e) 50% 50% / 34% 30% no-repeat,
+    linear-gradient(#a8d17e, #a8d17e) 50% 80% / 66% 30% no-repeat,
+    linear-gradient(#a8d17e, #a8d17e) 17% 100% / 20% 25% no-repeat,
+    linear-gradient(#a8d17e, #a8d17e) 83% 100% / 20% 25% no-repeat;
+}
+.license-vault-bolts {
+  position: absolute;
+  inset: 24px 8px;
+  border: 0;
+  opacity: 0.45;
+  background:
+    linear-gradient(#aac88788, #aac88788) 5px 5px / 5px 5px no-repeat,
+    linear-gradient(#aac88788, #aac88788) calc(100% - 5px) 5px / 5px 5px
+    no-repeat,
+    linear-gradient(#aac88788, #aac88788) 5px calc(100% - 5px) / 5px 5px
+    no-repeat,
+    linear-gradient(#aac88788, #aac88788) calc(100% - 5px) calc(100% - 5px) /
+    5px 5px no-repeat;
+}
+[data-license-plan="monthly"] .license-card__capacity {
+  padding: 14px;
+  border: 3px solid var(--license-shadow);
+  background: #0b160f;
+  box-shadow:
+    inset 1px 1px #7f9b5c55,
+    inset -1px -1px #0008;
+}
+[data-license-plan="monthly"] .license-card__slots {
+  gap: 6px;
+}
+
+/** Ender Dragon: moldura de portal em obsidiana e horizonte do End. */
+.license-card[data-license-plan="lifetime"] {
+  --license-accent: #c5a2f4;
+  --license-soft: #f0e2ff;
+  --license-deep: #170f23;
+  --license-rim: #4c365b;
+  --license-lit: #9b79b4;
+  --license-shadow: #0a0510;
+  --license-soil: #51405f;
+  --license-panel: #1b1228;
+  --license-button: #3e2c4d;
+  border-width: 5px;
+  border-top-color: #785793;
+  border-left-color: #5e426f;
+  box-shadow:
+    inset 0 0 0 1px #9e75b444,
+    0 6px #08040e,
+    0 0 0 1px #9e75b444;
+}
+[data-license-plan="lifetime"] .license-identity {
+  background:
+    repeating-linear-gradient(90deg, #b58bdf06 0 1px, transparent 1px 48px),
+    #130c20;
+  border-bottom: 5px solid #493056;
+}
+[data-license-plan="lifetime"] .license-identity__composition {
+  grid-template-columns: 260px minmax(0, 1fr);
+  min-height: 260px;
+  gap: 30px;
+}
+[data-license-plan="lifetime"] .license-identity__art {
+  order: -1;
+}
+[data-license-plan="lifetime"] .license-identity__copy {
+  padding-left: 24px;
+  border-left: 2px solid #7f559b4d;
+}
+[data-license-plan="lifetime"] .license-identity h3 {
+  font-size: clamp(1.6rem, 3vw, 2.3rem);
+}
+[data-license-plan="lifetime"] .license-world__landscape {
+  width: 100%;
+  opacity: 0.85;
+  mask-image: linear-gradient(90deg, #000, #0008);
+}
+[data-license-plan="lifetime"] .license-world__particles i {
+  background: #d69cff;
+}
+.license-end-portal {
+  position: absolute;
+  width: 153px;
+  height: 188px;
+  border: 10px solid #392445;
+  border-top-color: #62436d;
+  border-left-color: #503359;
+  outline: 2px solid #885b9a66;
+  background:
+    repeating-conic-gradient(#a661d41a 0% 25%, #4c245214 0% 50%) 0 0 / 18px 18px,
+    #351744;
+  box-shadow:
+    inset 4px 4px #150a24,
+    inset -3px -3px #b97ee12d,
+    0 0 22px #b666e91c;
+}
+.license-end-portal::after {
+  content: "";
+  position: absolute;
+  top: -18px;
+  left: 50%;
+  width: 13px;
+  height: 13px;
+  border: 2px solid #dbb8ff;
+  background: #6d4381;
+  transform: translateX(-50%) rotate(45deg);
+}
+.license-end-runes {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  width: max-content;
+  transform: translateX(-50%);
+  color: #c39ce89c;
+  font-size: 9px;
+  letter-spacing: 13px;
+}
+[data-license-plan="lifetime"] .license-identity__footer {
+  margin: 0 -24px;
+  padding: 0 24px;
+  background: #0c0615b0;
+  border-top-color: #66417c;
+  color: #d9b5ff;
+}
+[data-license-plan="lifetime"] .license-card__body {
+  grid-template-columns: minmax(210px, 0.7fr) minmax(0, 1.3fr);
+}
+[data-license-plan="lifetime"] .license-card__capacity {
+  order: -1;
+  padding-left: 0;
+  border-left: 0;
+  border-right: 2px solid var(--license-shadow);
+  padding-right: 24px;
+}
+
+/** Aether: quartzo, nuvens em blocos, detalhes de ouro e santuário celeste. */
+.license-card[data-license-plan="aether"] {
+  --license-accent: #94e5ed;
+  --license-soft: #e0fbff;
+  --license-deep: #173444;
+  --license-rim: #718b90;
+  --license-lit: #d2decb;
+  --license-shadow: #0a1b26;
+  --license-soil: #709394;
+  --license-panel: #122b3a;
+  --license-button: #385260;
+  border-width: 4px;
+  border-top-color: #c6b47b;
+  border-right-color: #718b90;
+  border-bottom-color: #46656e;
+  border-left-color: #a0b8b3;
+}
+[data-license-plan="aether"] .license-identity {
+  background: linear-gradient(180deg, #183b50, #153142);
+  border-bottom-color: #8da6a3;
+}
+[data-license-plan="aether"] .license-identity__composition {
+  grid-template-columns: minmax(0, 1fr) 330px;
+  min-height: 260px;
+}
+[data-license-plan="aether"] .license-identity h3 {
+  color: #f7e3a9;
+  font-size: clamp(1.9rem, 3.8vw, 3rem);
+}
+[data-license-plan="aether"] .license-identity__collection {
+  color: #f0dca8;
+}
+[data-license-plan="aether"] .license-identity__collection > span {
+  background: #7e734c;
+  box-shadow:
+    inset 1px 1px #e1d295,
+    inset -1px -1px #413b27;
+}
+[data-license-plan="aether"] .license-world__landscape {
+  width: 100%;
+  opacity: 0.85;
+}
+[data-license-plan="aether"] .license-world__particles i {
+  background: #f4d889;
+}
+.license-aether-orbit {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 157px;
+  height: 157px;
+  border: 6px double #c0dcd480;
+  transform: translate(-50%, -50%) rotate(45deg);
+  background: #80e6f008;
+  box-shadow: 0 0 0 8px #9edfe40a;
+}
+.license-aether-orbit::before,
+.license-aether-orbit::after {
+  content: "";
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border: 2px solid #f4dc99;
+  background: #9f8a4e;
+  box-shadow: inset 1px 1px #f8e9bd;
+}
+.license-aether-orbit::before {
+  top: -9px;
+  left: -9px;
+}
+.license-aether-orbit::after {
+  bottom: -9px;
+  right: -9px;
+}
+.license-aether-wings {
+  position: absolute;
+  inset: 25% -3% 14%;
+  opacity: 0.3;
+  background: linear-gradient(90deg, #b6ded233, transparent 42% 58%, #b6ded233);
+  clip-path: polygon(
+    0 0,
+    35% 20%,
+    50% 65%,
+    65% 20%,
+    100% 0,
+    100% 30%,
+    85% 30%,
+    85% 60%,
+    72% 60%,
+    72% 85%,
+    50% 100%,
+    28% 85%,
+    28% 60%,
+    15% 60%,
+    15% 30%,
+    0 30%
+  );
+}
+[data-license-plan="aether"] .license-identity__footer {
+  color: #f0dca8;
+  border-top-color: #bda46c55;
+}
+[data-license-plan="aether"] .license-card__body {
+  grid-template-columns: minmax(0, 1fr) 280px;
+}
+[data-license-plan="aether"] .license-card__capacity {
+  padding: 14px;
+  border: 3px solid #0a1d29;
+  background: #102533;
+  box-shadow:
+    inset 1px 1px #d5d6a950,
+    inset -1px -1px #0006;
+}
+[data-license-plan="aether"] .license-card__fill {
+  background: #e0c881;
+}
+
+@media (min-width: 1050px) {
+  [data-license-plan="aether"] .license-card__server-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 900px) {
+  .license-card__body,
+  [data-license-plan="lifetime"] .license-card__body,
+  [data-license-plan="aether"] .license-card__body {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+  }
+  .license-card__capacity {
+    border-left: 0;
+    padding-left: 0;
+    border-top: 2px solid var(--license-shadow);
+    padding-top: 16px;
+  }
+  [data-license-plan="lifetime"] .license-card__capacity {
+    order: initial;
+    border-right: 0;
+    padding-right: 0;
+    border-top: 2px solid var(--license-shadow);
+    padding-top: 16px;
+  }
+}
+@media (max-width: 640px) {
+  .license-identity {
+    padding: 16px 16px 0;
+  }
+  .license-identity__collection {
+    gap: 7px;
+    font-size: 8px;
+    letter-spacing: 0.06em;
+  }
+  .license-identity__collection > span {
+    width: 23px;
+    height: 23px;
+    font-size: 8px;
+  }
+  .license-identity__status {
+    padding: 3px 6px;
+    font-size: 9px;
+    min-height: 25px;
+  }
+  .license-identity__composition,
+  [data-license-plan="trial"] .license-identity__composition,
+  [data-license-plan="monthly"] .license-identity__composition {
+    grid-template-columns: minmax(0, 1fr) 115px;
+    gap: 4px;
+    min-height: 210px;
+  }
+  .license-identity__copy {
+    padding: 22px 0;
+  }
+  .license-identity__art {
+    min-height: 160px;
+  }
+  .license-identity__image {
+    width: 100%;
+    max-width: 100%;
+  }
+  .license-identity__eyebrow {
+    max-width: 150px;
+    font-size: 7px;
+    line-height: 1.7;
+    letter-spacing: 0.1em;
+  }
+  .license-identity h3,
+  [data-license-plan="monthly"] .license-identity h3 {
+    font-size: 1.5rem;
+  }
+  .license-identity__description {
+    font-size: 11px;
+    line-height: 1.65;
+  }
+  .license-identity__countdown {
+    padding: 7px;
+    font-size: 11px;
+  }
+  .license-identity__footer {
+    min-height: 43px;
+    font-size: 8px;
+  }
+  .license-identity__reference {
+    font-size: 8px;
+  }
+  .license-card__body {
+    padding: 20px 16px;
+  }
+  [data-license-plan="trial"] .license-identity {
+    padding-left: 27px;
+  }
+  .license-ticket-stamp {
+    top: 12px;
+    right: 0;
+    width: 34px;
+    height: 34px;
+    font-size: 6px;
+  }
+  .license-vault-face {
+    width: 72px;
+    height: 90px;
+  }
+  .license-vault-bolts {
+    inset: 28px 0;
+  }
+  [data-license-plan="lifetime"] .license-identity__composition,
+  [data-license-plan="aether"] .license-identity__composition {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+    min-height: 0;
+    padding-top: 12px;
+  }
+  [data-license-plan="lifetime"] .license-identity__art,
+  [data-license-plan="aether"] .license-identity__art {
+    order: -1;
+    width: min(100%, 220px);
+    min-height: 195px;
+    justify-self: center;
+  }
+  [data-license-plan="lifetime"] .license-identity__copy,
+  [data-license-plan="aether"] .license-identity__copy {
+    padding: 12px 0 26px;
+    border-left: 0;
+    text-align: center;
+  }
+  [data-license-plan="lifetime"] .license-identity__eyebrow,
+  [data-license-plan="aether"] .license-identity__eyebrow {
+    max-width: none;
+  }
+  [data-license-plan="lifetime"] .license-identity h3 {
+    font-size: 1.7rem;
+  }
+  [data-license-plan="aether"] .license-identity h3 {
+    font-size: 2rem;
+  }
+  .license-end-portal {
+    width: 135px;
+    height: 165px;
+  }
+  .license-end-runes {
+    bottom: 0;
+  }
+  [data-license-plan="lifetime"] .license-identity__footer {
+    margin: 0 -16px;
+    padding: 0 16px;
+  }
+  .license-aether-orbit {
+    width: 130px;
+    height: 130px;
+  }
+  [data-license-plan="aether"] .license-world__landscape {
+    width: 150%;
+    max-width: none;
+    height: 75%;
+    right: -25%;
+    opacity: 0.6;
+  }
+  [data-license-plan="lifetime"] .license-world__landscape {
+    width: 160%;
+    max-width: none;
+    height: 75%;
+    right: -30%;
+    opacity: 0.65;
+  }
+  .license-world__landscape {
+    width: 140%;
+    max-width: none;
+    right: -40%;
+  }
+}
+@media (max-width: 390px) {
+  .license-identity__composition,
+  [data-license-plan="trial"] .license-identity__composition,
+  [data-license-plan="monthly"] .license-identity__composition {
+    grid-template-columns: minmax(0, 1fr) 86px;
+  }
+  .license-identity h3,
+  [data-license-plan="monthly"] .license-identity h3 {
+    font-size: 1.3rem;
+  }
+  .license-ticket-stamp {
+    display: none;
+  }
+  .license-identity__description {
+    font-size: 10px;
+  }
+  .license-card__key-field {
+    gap: 7px;
+    padding: 8px;
+    font-size: 11px;
+  }
+  .license-card__key-item {
+    width: 25px;
+    height: 27px;
+  }
+}
+:root[data-scene-motion="off"] .license-world__particles i {
+  animation: none;
+  opacity: 0.35;
+}
+@media (prefers-reduced-motion: reduce) {
+  .license-identity__image {
+    transition: none;
+  }
+  .license-card:hover .license-identity__image,
+  [data-license-plan="trial"] .license-identity__image {
+    transform: none;
+  }
+  .license-world__particles i {
+    animation: none;
+    opacity: 0.35;
+  }
+  .license-mc-button {
+    transition: none;
+  }
+}
+
+/** Overworld com horizonte discreto e área limpa para os dados do acesso. */
+@media (max-width: 640px) {
+  [data-license-plan="trial"] .license-world__landscape,
+  [data-license-plan="monthly"] .license-world__landscape {
+    width: 100%;
+    right: 0;
+    height: 65%;
+    opacity: 0.5;
+    mask-image: linear-gradient(90deg, transparent 25%, #000 100%);
+  }
+  [data-license-plan="trial"] .license-identity__composition,
+  [data-license-plan="monthly"] .license-identity__composition {
+    grid-template-columns: minmax(0, 1fr) 120px;
+  }
+}
+@media (max-width: 360px) {
+  [data-license-plan="trial"] .license-identity__composition,
+  [data-license-plan="monthly"] .license-identity__composition {
+    grid-template-columns: minmax(0, 1fr) 86px;
+  }
+}
+
+/** Limites grandes não geram uma grade comprimida nem uma quota para o ilimitado. */
+.license-capacity__heading {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 6px 12px;
+  min-width: 0;
+}
+.license-capacity__heading > span {
+  color: #d0d6cb;
+  font-size: 12px;
+  font-weight: 700;
+}
+.license-capacity__heading > strong {
+  max-width: 100%;
+  color: var(--license-soft);
+  font-family: var(--font-minecraft), monospace;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.license-capacity__unlimited {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  margin-top: 12px;
+  padding: 10px;
+  border: 2px solid var(--license-shadow);
+  background: #0003;
+  box-shadow:
+    inset 1px 1px #0008,
+    inset -1px -1px #ffffff15;
+}
+.license-capacity__unlimited > span {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 40px;
+  height: 36px;
+  color: var(--license-accent);
+}
+.license-capacity__unlimited p {
+  min-width: 0;
+  color: #c7d1c0;
+  font-size: 11px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.license-capacity__unlimited p strong {
+  color: var(--license-soft);
+  font-family: monospace;
+  font-size: 16px;
+}
+.license-capacity__network {
+  position: relative;
+  height: 22px;
+  margin-top: 13px;
+  overflow: hidden;
+  border: 2px solid var(--license-shadow);
+  background: color-mix(in srgb, var(--license-rim) 35%, #111613);
+  box-shadow:
+    inset 1px 1px #0007,
+    inset -1px -1px #ffffff15;
+}
+.license-capacity__network > .license-card__fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  max-width: 100%;
+}
+.license-capacity__ticks {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(
+      90deg,
+      transparent calc(100% - 2px),
+      var(--license-shadow) calc(100% - 2px)
+    )
+    0 0 / 10% 100%;
+}
+.license-capacity__note {
+  margin-top: 10px;
+  color: #c0cabb;
+  font-size: 11px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}

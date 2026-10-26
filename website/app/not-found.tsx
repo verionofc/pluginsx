@@ -4,7 +4,7 @@ import { createPageMetadata } from "@/lib/seo";
 export const metadata = createPageMetadata({
   title: "Bioma desconhecido",
   description:
-    "Esse caminho não existe mais. Volte ao PluginsX e continue explorando o catálogo.",
+    "O endereço informado não corresponde a uma página disponível no PluginsX.",
   privatePage: true,
 });
 

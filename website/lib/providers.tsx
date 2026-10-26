@@ -11,15 +11,14 @@ function Providers({
   children: React.ReactNode;
 }>) {
   return (
-
-      <ViewTransition>
-        <div className="relative z-10 flex min-h-screen flex-col">
-          {/* <Header /> */}
-          {/* <main className="flex-1 pt-17.5">{children}</main> */}
-          <main className="flex-1">{children}</main>
-          {/* <Footer /> */}
-        </div>
-      </ViewTransition>
+    <ViewTransition>
+      <div className="relative z-10 flex min-h-screen flex-col">
+        {/* <Header /> */}
+        {/* <main className="flex-1 pt-17.5">{children}</main> */}
+        <main className="flex-1">{children}</main>
+        {/* <Footer /> */}
+      </div>
+    </ViewTransition>
   );
 }
 

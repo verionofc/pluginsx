@@ -4,7 +4,7 @@ import { createPageMetadata } from "@/lib/seo";
 export const metadata = createPageMetadata({
   title: "Painel do proprietário",
   description:
-    "Área privada para acompanhar vendas, pagamentos, receita e acessos da operação PluginsX.",
+    "Painel administrativo com receita confirmada, cobranças, compras por conta e gestão de acessos.",
   path: "/panel",
   privatePage: true,
 });

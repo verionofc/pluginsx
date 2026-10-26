@@ -32,7 +32,7 @@
     "aether": {
       "id": "aether",
       "name": "Aether",
-      "amount": 0.9,
+      "amount": 129.9,
       "serverLimit": 250,
       "oneTime": true
     }

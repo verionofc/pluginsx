@@ -1,0 +1,196 @@
+/** Paletas semânticas compartilhadas pelas páginas e pelas prévias de aparência. */
+
+:root,
+[data-theme-preview="default"] {
+  --site-background: #070c09;
+  --site-surface: #111a16;
+  --site-surface-deep: #0c130f;
+  --site-surface-raised: #19251b;
+  --site-surface-hover: #243022;
+  --site-text: #f5f8f1;
+  --site-text-muted: #b0bda8;
+  --site-text-subtle: #95a28d;
+  --site-border: #718667;
+  --site-border-strong: #a6cf74;
+  --site-accent: #a6cf74;
+  --site-accent-soft: #d2ecb7;
+  --site-accent-strong: #3f712c;
+  --site-accent-hover: #4b8035;
+  --site-accent-foreground: #14200f;
+  --site-strong-foreground: #f7ffe9;
+  --site-accent-edge: #294b20;
+  --site-disabled: #343d34;
+  --site-shadow: #030604;
+  --world-sky-top: #0c1719;
+  --world-sky-bottom: #101a13;
+  --world-earth: #172219;
+  --world-grass: #32462b;
+  --world-stone: #1b2926;
+  --world-leaves: #20331e;
+  --world-star: #abc4b5;
+  --world-moon: #b6c2aa;
+  --world-moon-shade: #82928a;
+  --world-moon-edge: #8a9c8a;
+  --world-trunk: #211e16;
+  --world-trunk-shade: #191b14;
+  --world-cloud: #1b2926;
+  --world-tree-display: block;
+  --world-island-display: none;
+  --world-ground-display: block;
+  --world-ridge-far-height: 47%;
+  --world-ridge-near-height: 32%;
+  --world-ridge-opacity: 0.52;
+}
+
+:root[data-site-theme="the-end"],
+[data-theme-preview="the-end"] {
+  --site-background: #0c0812;
+  --site-surface: #181120;
+  --site-surface-deep: #110b18;
+  --site-surface-raised: #251a31;
+  --site-surface-hover: #352343;
+  --site-text: #f9f5ff;
+  --site-text-muted: #c3b3d1;
+  --site-text-subtle: #a997bb;
+  --site-border: #8b70a2;
+  --site-border-strong: #c5a1fa;
+  --site-accent: #c5a1fa;
+  --site-accent-soft: #e6d6ff;
+  --site-accent-strong: #7141a8;
+  --site-accent-hover: #8150b9;
+  --site-accent-foreground: #21102f;
+  --site-strong-foreground: #fffaff;
+  --site-accent-edge: #4d2875;
+  --site-disabled: #3b3046;
+  --site-shadow: #06030c;
+  --world-sky-top: #170e25;
+  --world-sky-bottom: #21122c;
+  --world-earth: #303044;
+  --world-grass: #827492;
+  --world-stone: #271833;
+  --world-leaves: #39254a;
+  --world-star: #d3b5ff;
+  --world-moon: #674887;
+  --world-moon-shade: #48305f;
+  --world-moon-edge: #352047;
+  --world-trunk: #21162c;
+  --world-trunk-shade: #120d1b;
+  --world-cloud: #372144;
+  --world-tree-display: none;
+  --world-island-display: block;
+  --world-ground-display: block;
+  --world-ridge-far-height: 23%;
+  --world-ridge-near-height: 16%;
+  --world-ridge-opacity: 0.38;
+}
+
+:root[data-site-theme="aether"],
+[data-theme-preview="aether"] {
+  --site-background: #07151e;
+  --site-surface: #10232e;
+  --site-surface-deep: #0a1a24;
+  --site-surface-raised: #193440;
+  --site-surface-hover: #224651;
+  --site-text: #f2fcff;
+  --site-text-muted: #b1ccd5;
+  --site-text-subtle: #93b5c1;
+  --site-border: #6e9da9;
+  --site-border-strong: #83d9e9;
+  --site-accent: #83d9e9;
+  --site-accent-soft: #c7f2f8;
+  --site-accent-strong: #176d83;
+  --site-accent-hover: #1b7b91;
+  --site-accent-foreground: #09212a;
+  --site-strong-foreground: #f2fdff;
+  --site-accent-edge: #0e485c;
+  --site-disabled: #30444f;
+  --site-shadow: #030b12;
+  --world-sky-top: #102e43;
+  --world-sky-bottom: #1b3545;
+  --world-earth: #314553;
+  --world-grass: #799c91;
+  --world-stone: #20394d;
+  --world-leaves: #324e57;
+  --world-star: #c9e8ee;
+  --world-moon: #d6d5b7;
+  --world-moon-shade: #b2b79f;
+  --world-moon-edge: #8a9e99;
+  --world-trunk: #394647;
+  --world-trunk-shade: #233742;
+  --world-cloud: #7596a9;
+  --world-tree-display: none;
+  --world-island-display: block;
+  --world-ground-display: none;
+  --world-ridge-far-height: 19%;
+  --world-ridge-near-height: 12%;
+  --world-ridge-opacity: 0.25;
+}
+
+:root {
+  color-scheme: dark;
+  --site-accent-wash: color-mix(in srgb, var(--site-accent) 12%, transparent);
+  --site-accent-glow: color-mix(in srgb, var(--site-accent) 20%, transparent);
+  --background: var(--site-background);
+  --background-hover: var(--site-surface-hover);
+  --foreground: var(--site-text);
+  --primary: var(--site-accent-strong);
+  --border: var(--site-border);
+  --accent: var(--site-accent-strong);
+  --accent-foreground: var(--site-strong-foreground);
+  --surface: var(--site-surface);
+  --surface-foreground: var(--site-text);
+  --surface-secondary: var(--site-surface-raised);
+  --surface-tertiary: var(--site-surface-hover);
+  --overlay: var(--site-surface);
+  --overlay-foreground: var(--site-text);
+  --field-background: var(--site-surface-deep);
+  --field-foreground: var(--site-text);
+  --field-border: var(--site-border);
+  --field-placeholder: var(--site-text-subtle);
+  --focus: var(--site-accent);
+  --muted: var(--site-text-muted);
+  --success: #6bd497;
+  --success-surface: #10271b;
+  --success-text: #bceccd;
+  --warning: #f0c674;
+  --warning-surface: #292110;
+  --danger: #ff8e98;
+  --danger-surface: #2c161b;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-background-hover: var(--background-hover);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-success: var(--success);
+  --color-success-surface: var(--success-surface);
+  --color-warning: var(--warning);
+  --color-warning-surface: var(--warning-surface);
+  --color-danger: var(--danger);
+  --color-danger-surface: var(--danger-surface);
+  --color-border: var(--border);
+  --color-canvas: var(--site-background);
+  --color-surface: var(--site-surface);
+  --color-surface-deep: var(--site-surface-deep);
+  --color-surface-raised: var(--site-surface-raised);
+  --color-surface-hover: var(--site-surface-hover);
+  --color-accent: var(--site-accent);
+  --color-accent-soft: var(--site-accent-soft);
+  --color-accent-strong: var(--site-accent-strong);
+  --color-accent-hover: var(--site-accent-hover);
+  --color-accent-wash: var(--site-accent-wash);
+  --color-accent-edge: var(--site-accent-edge);
+  --color-on-accent: var(--site-accent-foreground);
+  --color-on-strong: var(--site-strong-foreground);
+  --color-outline: var(--site-border);
+  --color-outline-strong: var(--site-border-strong);
+  --color-muted: var(--site-text-muted);
+  --color-subtle: var(--site-text-subtle);
+  --color-disabled: var(--site-disabled);
+}
+
+::selection {
+  background: var(--site-accent);
+  color: var(--site-accent-foreground);
+}

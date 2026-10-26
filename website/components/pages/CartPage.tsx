@@ -34,6 +34,15 @@ type BillingState = {
   additionalServerSlots?: number;
 };
 
+type CouponQuote = {
+  code: string;
+  subtotal: number;
+  discountAmount: number;
+  total: number;
+  eligibleAmount: number;
+  monthlyRecurring: boolean;
+};
+
 const currency = new Intl.NumberFormat("pt-BR", {
   style: "currency",
   currency: "BRL",
@@ -49,6 +58,7 @@ export function CartPage() {
     itemCount,
     setPlan,
     setServerSlots,
+    setCouponCode,
     settlePurchase,
   } = useCart();
   const [catalog, setCatalog] = useState<PlanCatalog>();
@@ -59,6 +69,10 @@ export function CartPage() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [returnStatus, setReturnStatus] = useState<string | null>(null);
+  const [couponQuote, setCouponQuote] = useState<CouponQuote | null>(null);
+  const [couponQuoteKey, setCouponQuoteKey] = useState("");
+  const [couponBusy, setCouponBusy] = useState(false);
+  const [couponMessage, setCouponMessage] = useState("");
   const handledPurchaseRef = useRef<string | null>(null);
 
   const refreshBilling = useCallback(async () => {
@@ -201,6 +215,12 @@ export function CartPage() {
     ? catalog?.plans.find((plan) => plan.id === cart.plan)
     : undefined;
   const total = (selectedPlan?.amount ?? 0) + cart.serverSlots * unitSlotAmount;
+  const couponContextKey = `${cart.plan ?? "server_slots"}:${cart.serverSlots}:${cart.couponCode ?? ""}`;
+  const activeCouponQuote =
+    couponQuoteKey === couponContextKey ? couponQuote : null;
+  const couponCartChanged = Boolean(
+    couponQuoteKey && couponQuoteKey !== couponContextKey,
+  );
   const currentPlanName =
     access?.plan === "aether"
       ? "Aether"
@@ -216,6 +236,58 @@ export function CartPage() {
     if (!canBuySlots && value > 0) return;
     setServerSlots(Math.max(0, Math.min(maxSlots, value)));
     setError("");
+  }
+
+  async function validateCoupon() {
+    if (!cart.couponCode) {
+      setCouponMessage("Digite o código do cupom.");
+      setCouponQuote(null);
+      setCouponQuoteKey("");
+      return;
+    }
+    if (!itemCount) {
+      setCouponMessage("Adicione um produto pago antes de aplicar um cupom.");
+      return;
+    }
+    if (!session) {
+      setCouponMessage("Entre na sua conta para validar e reservar o cupom.");
+      return;
+    }
+
+    setCouponBusy(true);
+    setCouponMessage("");
+    try {
+      const response = await fetch("/billing/coupon/validate", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          plan: cart.plan ?? "server_slots",
+          serverSlots: cart.serverSlots,
+          couponCode: cart.couponCode,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok)
+        throw new Error(result.message ?? "Cupom indisponível.");
+      setCouponQuote(result as CouponQuote);
+      setCouponQuoteKey(couponContextKey);
+      setCouponMessage(
+        (result as CouponQuote).monthlyRecurring
+          ? "Cupom aplicado. O desconto do Creeper também vale nas próximas cobranças mensais."
+          : "Cupom aplicado aos produtos elegíveis.",
+      );
+    } catch (couponError) {
+      setCouponQuote(null);
+      setCouponQuoteKey("");
+      setCouponMessage(
+        couponError instanceof Error
+          ? couponError.message
+          : "Não foi possível validar o cupom.",
+      );
+    } finally {
+      setCouponBusy(false);
+    }
   }
 
   async function checkout() {
@@ -241,6 +313,12 @@ export function CartPage() {
       );
       return;
     }
+    if (cart.couponCode && !activeCouponQuote) {
+      setError(
+        "Reaplique o cupom para confirmar o preço atualizado deste pedido.",
+      );
+      return;
+    }
 
     setBusy(true);
     setError("");
@@ -253,6 +331,7 @@ export function CartPage() {
         body: JSON.stringify({
           plan: cart.plan ?? "server_slots",
           serverSlots: cart.serverSlots,
+          ...(cart.couponCode ? { couponCode: cart.couponCode } : {}),
           returnTo: "/cart",
         }),
       });
@@ -283,20 +362,20 @@ export function CartPage() {
       className="relative z-10 mx-auto min-h-screen w-full max-w-6xl px-4 pb-28 pt-20 sm:px-6 sm:pt-24"
       aria-labelledby="cart-title"
     >
-      <header className="mb-7 border-b-2 border-[#687b5a]/50 pb-5">
+      <header className="mb-7 border-b-2 border-outline/50 pb-5">
         <Link
           href="/plans"
-          className="inline-flex min-h-9 items-center gap-2 text-xs font-semibold text-[#b9d59b] transition hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#c9e9a8]"
+          className="inline-flex min-h-9 items-center gap-2 text-xs font-semibold text-accent-soft transition hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-outline-strong"
         >
           <TbArrowLeft aria-hidden="true" className="size-4" />
           Continuar escolhendo
         </Link>
         <div className="mt-4 flex items-center gap-3">
-          <span className="grid size-12 shrink-0 place-items-center border-2 border-[#b5d58a]/45 bg-[#1b2c22] text-[#b9d59b] shadow-[inset_0_0_0_3px_rgba(10,18,12,0.7),0_4px_0_#080d09]">
+          <span className="grid size-12 shrink-0 place-items-center border-2 border-outline-strong/45 bg-surface-raised text-accent-soft shadow-[inset_0_0_0_3px_color-mix(in_srgb,var(--site-background)_70%,transparent),0_4px_0_var(--site-shadow)]">
             <TbShoppingCart aria-hidden="true" className="size-6" />
           </span>
           <div className="min-w-0">
-            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#a6cf74]">
+            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-accent">
               PluginsX / compra
             </p>
             <h1
@@ -306,20 +385,16 @@ export function CartPage() {
               Seu carrinho
             </h1>
           </div>
-          <span className="ml-auto border border-[#718667]/35 bg-[#101811] px-3 py-2 text-[10px] font-bold uppercase tracking-[0.12em] text-[#b9d59b]">
+          <span className="ml-auto border border-outline/35 bg-surface px-3 py-2 text-[10px] font-bold uppercase tracking-[0.12em] text-accent-soft">
             {itemCount} {itemCount === 1 ? "item" : "itens"}
           </span>
         </div>
-        <p className="mt-3 max-w-3xl text-sm leading-6 text-white/60">
-          Confira seus planos e a capacidade extra antes de ir ao checkout
-          seguro.
-        </p>
       </header>
 
       {returnStatus && (
         <output
           aria-live="polite"
-          className="mb-4 block border-l-4 border-[#e3bd59] bg-[#211b0e] px-4 py-3 text-sm leading-6 text-amber-100"
+          className="mb-4 block border-l-4 border-[#e3bd59] bg-warning-surface px-4 py-3 text-sm leading-6 text-amber-100"
         >
           {returnStatus === "success"
             ? "Retorno recebido. A confirmação do pagamento é consultada no servidor."
@@ -333,7 +408,7 @@ export function CartPage() {
       {message && (
         <output
           aria-live="polite"
-          className="mb-4 block border-l-4 border-[#8bc34a] bg-[#101a12] px-4 py-3 text-sm leading-6 text-[#d9f2bd]"
+          className="mb-4 block border-l-4 border-outline-strong bg-surface px-4 py-3 text-sm leading-6 text-accent-soft"
         >
           {message}
         </output>
@@ -341,7 +416,7 @@ export function CartPage() {
       {error && (
         <div
           role="alert"
-          className="mb-4 border-l-4 border-[#d66d68] bg-[#211211] px-4 py-3 text-sm leading-6 text-red-100"
+          className="mb-4 border-l-4 border-[#d66d68] bg-danger-surface px-4 py-3 text-sm leading-6 text-red-100"
         >
           {error}
         </div>
@@ -350,7 +425,7 @@ export function CartPage() {
       {loading ? (
         <section
           aria-live="polite"
-          className="grid min-h-52 place-items-center border-2 border-[#718667]/35 bg-[#111a16] text-sm text-white/55"
+          className="grid min-h-52 place-items-center border-2 border-outline/35 bg-surface text-sm text-white/55"
         >
           <span className="flex items-center gap-2">
             <TbLoader2 aria-hidden="true" className="size-4 animate-spin" />{" "}
@@ -358,11 +433,11 @@ export function CartPage() {
           </span>
         </section>
       ) : itemCount === 0 ? (
-        <section className="mx-auto grid min-h-72 max-w-3xl place-items-center border-2 border-dashed border-[#718667]/40 bg-[#111a16]/90 p-6 text-center">
+        <section className="mx-auto grid min-h-72 max-w-3xl place-items-center border-2 border-dashed border-outline/40 bg-surface/90 p-6 text-center">
           <div>
             <TbShoppingCart
               aria-hidden="true"
-              className="mx-auto size-10 text-[#91b56b]"
+              className="mx-auto size-10 text-muted"
             />
             <h2 className="font-minecraft-text mt-4 text-xl font-bold text-white">
               Nenhum item por aqui
@@ -373,7 +448,7 @@ export function CartPage() {
             </p>
             <Link
               href="/plans"
-              className="font-minecraft-text mt-5 inline-flex min-h-11 items-center justify-center gap-2 border-b-4 border-[#345d2f] bg-[#5e9b43] px-5 text-xs font-bold text-[#f7ffe9] transition hover:bg-[#6eaa4d] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+              className="font-minecraft-text mt-5 inline-flex min-h-11 items-center justify-center gap-2 border-b-4 border-accent-edge bg-accent-strong px-5 text-xs font-bold text-on-strong transition hover:bg-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
             >
               Ver planos
             </Link>
@@ -384,11 +459,11 @@ export function CartPage() {
           <section aria-label="Itens selecionados" className="grid gap-3">
             {cart.plan && selectedPlan && (
               <article
-                className={`border-2 bg-[#111a16] shadow-[0_5px_0_#070b08] ${cart.plan === "aether" ? "border-[#8ab95d]/55" : "border-[#8b5cf6]/35"}`}
+                className={`border-2 bg-surface shadow-[0_5px_0_var(--site-shadow)] ${cart.plan === "aether" ? "border-outline-strong/55" : "border-[#8b5cf6]/35"}`}
               >
                 <div className="flex flex-wrap items-center justify-between gap-4 p-4 sm:p-5">
                   <div className="min-w-0">
-                    <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-[#91b56b]">
+                    <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-muted">
                       Acesso vitalício · pagamento único
                     </p>
                     <h2 className="font-minecraft-text mt-1 text-lg font-bold text-white">
@@ -417,10 +492,10 @@ export function CartPage() {
               </article>
             )}
 
-            <article className="border-2 border-[#718667]/35 bg-[#111a16] shadow-[0_5px_0_#070b08]">
+            <article className="border-2 border-outline/35 bg-surface shadow-[0_5px_0_var(--site-shadow)]">
               <div className="flex flex-wrap items-center justify-between gap-4 p-4 sm:p-5">
                 <div className="min-w-0">
-                  <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-[#91b56b]">
+                  <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-muted">
                     Capacidade de servidor
                   </p>
                   <h2 className="font-minecraft-text mt-1 text-base font-bold text-white">
@@ -451,14 +526,14 @@ export function CartPage() {
                     onChange={(event) =>
                       updateSlotCount(Number(event.target.value))
                     }
-                    className="h-9 w-16 border border-[#718667]/35 bg-[#080d0a] text-center font-minecraft-text text-sm font-bold text-white outline-none focus:border-[#a6cf74] disabled:opacity-40"
+                    className="h-9 w-16 border border-outline/35 bg-canvas text-center font-minecraft-text text-sm font-bold text-white outline-none focus:border-outline-strong disabled:opacity-40"
                   />
                   <button
                     type="button"
                     aria-label="Adicionar uma vaga"
                     disabled={!canBuySlots || cart.serverSlots >= maxSlots}
                     onClick={() => updateSlotCount(cart.serverSlots + 1)}
-                    className="grid size-9 place-items-center border border-[#a6cf74]/35 text-[#c9e9a8] disabled:opacity-30 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+                    className="grid size-9 place-items-center border border-outline-strong/35 text-accent-soft disabled:opacity-30 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
                   >
                     <TbPlus aria-hidden="true" className="size-4" />
                   </button>
@@ -475,7 +550,7 @@ export function CartPage() {
                 </div>
               </div>
               {cart.serverSlots > 0 && (
-                <div className="flex justify-between border-t border-[#718667]/20 bg-[#0c130f] px-4 py-3 text-xs sm:px-5">
+                <div className="flex justify-between border-t border-outline/20 bg-surface-deep px-4 py-3 text-xs sm:px-5">
                   <span className="text-white/50">
                     {cart.serverSlots} × {unitSlotPrice}
                   </span>
@@ -487,13 +562,13 @@ export function CartPage() {
             </article>
 
             {!canBuySlots && (
-              <p className="border-l-4 border-[#e3bd59] bg-[#211b0e] px-4 py-3 text-xs leading-5 text-amber-100">
+              <p className="border-l-4 border-[#e3bd59] bg-warning-surface px-4 py-3 text-xs leading-5 text-amber-100">
                 Para comprar vagas sem um plano no carrinho, ative antes o
                 Creeper, o Ender Dragon ou o Aether.
               </p>
             )}
             {planAlreadyActive && (
-              <p className="border-l-4 border-[#e3bd59] bg-[#211b0e] px-4 py-3 text-xs leading-5 text-amber-100">
+              <p className="border-l-4 border-[#e3bd59] bg-warning-surface px-4 py-3 text-xs leading-5 text-amber-100">
                 {currentPlanName} já está ativo nesta conta. Remova o plano do
                 carrinho para finalizar somente as vagas extras.
               </p>
@@ -505,11 +580,11 @@ export function CartPage() {
             </p>
           </section>
 
-          <aside className="border-2 border-[#718667]/40 bg-[#111a16] p-4 shadow-[0_6px_0_#070b08] sm:p-5 lg:sticky lg:top-6">
+          <aside className="border-2 border-outline/40 bg-surface p-4 shadow-[0_6px_0_var(--site-shadow)] sm:p-5 lg:sticky lg:top-6">
             <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-white/40">
               Resumo do pedido
             </p>
-            <div className="mt-4 grid gap-3 border-b border-[#718667]/25 pb-4 text-xs">
+            <div className="mt-4 grid gap-3 border-b border-outline/25 pb-4 text-xs">
               {cart.plan && (
                 <div className="flex justify-between gap-3 text-white/65">
                   <span>
@@ -532,11 +607,90 @@ export function CartPage() {
                   <span>{currentPlanName}</span>
                 </div>
               )}
+              {activeCouponQuote && (
+                <>
+                  <div className="flex justify-between gap-3 text-white/55">
+                    <span>Subtotal</span>
+                    <span>{currency.format(activeCouponQuote.subtotal)}</span>
+                  </div>
+                  <div className="flex justify-between gap-3 text-accent-soft">
+                    <span>Cupom {activeCouponQuote.code}</span>
+                    <span>
+                      − {currency.format(activeCouponQuote.discountAmount)}
+                    </span>
+                  </div>
+                </>
+              )}
+            </div>
+            <div className="my-4 border border-outline/25 bg-surface-deep p-3">
+              <label
+                htmlFor="cart-coupon"
+                className="mb-2 block text-[9px] font-bold uppercase tracking-[0.16em] text-white/45"
+              >
+                Código de desconto
+              </label>
+              <div className="flex gap-2">
+                <input
+                  id="cart-coupon"
+                  value={cart.couponCode ?? ""}
+                  onChange={(event) => {
+                    setCouponCode(event.target.value);
+                    setCouponMessage("");
+                  }}
+                  maxLength={32}
+                  autoComplete="off"
+                  placeholder="EX: BEMVINDO"
+                  className="min-w-0 flex-1 border border-outline/35 bg-canvas px-3 py-2 text-xs font-bold uppercase tracking-wider text-white outline-none placeholder:text-white/25 focus:border-outline-strong"
+                />
+                <button
+                  type="button"
+                  onClick={() => void validateCoupon()}
+                  disabled={couponBusy || !itemCount}
+                  className="min-h-10 border border-outline-strong/40 px-3 text-[10px] font-bold text-accent-soft transition hover:bg-accent/10 disabled:opacity-40"
+                >
+                  {couponBusy
+                    ? "Validando…"
+                    : activeCouponQuote
+                      ? "Reaplicar"
+                      : "Aplicar"}
+                </button>
+              </div>
+              {cart.couponCode && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCouponCode(null);
+                    setCouponQuote(null);
+                    setCouponQuoteKey("");
+                    setCouponMessage("");
+                  }}
+                  className="mt-2 text-[9px] font-semibold text-white/40 underline underline-offset-2 hover:text-white/70"
+                >
+                  Remover cupom
+                </button>
+              )}
+              {(couponMessage || couponCartChanged) && (
+                <output
+                  className={`block mt-2 text-[10px] leading-4 ${activeCouponQuote ? "text-accent-soft" : "text-amber-100"}`}
+                >
+                  {couponCartChanged
+                    ? "O carrinho mudou. Reaplique o cupom para atualizar o preço."
+                    : couponMessage}
+                </output>
+              )}
+              {cart.couponCode &&
+                !activeCouponQuote &&
+                !couponMessage &&
+                !couponCartChanged && (
+                  <p className="mt-2 text-[10px] leading-4 text-amber-100/70">
+                    O carrinho mudou. Reaplique o cupom para atualizar o preço.
+                  </p>
+                )}
             </div>
             <div className="flex items-end justify-between gap-3 py-4">
               <span className="text-xs font-semibold text-white/55">Total</span>
               <strong className="font-minecraft-text text-2xl font-black text-white">
-                {currency.format(total)}
+                {currency.format(activeCouponQuote?.total ?? total)}
               </strong>
             </div>
             <p className="text-[10px] leading-5 text-white/40">
@@ -546,8 +700,14 @@ export function CartPage() {
             <button
               type="button"
               onClick={() => void checkout()}
-              disabled={busy || !itemCount || planAlreadyActive}
-              className="font-minecraft-text mt-4 inline-flex min-h-12 w-full items-center justify-center gap-2 border-b-4 border-[#345d2f] bg-[#5e9b43] px-3 text-xs font-bold text-[#f7ffe9] transition hover:bg-[#6eaa4d] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:border-[#344035] disabled:bg-[#343d34] disabled:text-[#8f9b89]"
+              disabled={
+                busy ||
+                !itemCount ||
+                planAlreadyActive ||
+                couponBusy ||
+                Boolean(cart.couponCode && !activeCouponQuote)
+              }
+              className="font-minecraft-text mt-4 inline-flex min-h-12 w-full items-center justify-center gap-2 border-b-4 border-accent-edge bg-accent-strong px-3 text-xs font-bold text-on-strong transition hover:bg-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:border-outline disabled:bg-disabled disabled:text-subtle"
             >
               {busy ? (
                 <TbLoader2 aria-hidden="true" className="size-4 animate-spin" />

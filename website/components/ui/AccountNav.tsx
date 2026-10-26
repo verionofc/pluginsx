@@ -42,7 +42,7 @@ export function AccountNav() {
               href="/panel"
               aria-label="Abrir painel de vendas"
               title="Painel de vendas"
-              className="font-minecraft-text inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-xl border border-[#a6cf74]/30 bg-[#111a16]/90 px-3 text-[10px] font-bold text-[#d2efb2] shadow-lg backdrop-blur-xl transition hover:border-[#a6cf74]/60 hover:bg-[#1b2c22] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c9e9a8]"
+              className="font-minecraft-text inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-xl border border-outline-strong/30 bg-surface/90 px-3 text-[10px] font-bold text-accent-soft shadow-lg backdrop-blur-xl transition hover:border-outline-strong/60 hover:bg-surface-raised focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-outline-strong"
             >
               <TbChartBar size={15} aria-hidden="true" />
               <span className="hidden sm:inline">Painel</span>
@@ -52,7 +52,7 @@ export function AccountNav() {
             href="/account"
             aria-label={`Abrir conta de ${session.user.name}`}
             title={session.user.name}
-            className="flex min-h-11 min-w-0 items-center gap-2 rounded-xl border border-white/10 bg-black/75 px-3 text-sm font-semibold text-white shadow-lg backdrop-blur-xl transition hover:border-[#a6cf74]/40 hover:bg-black/90"
+            className="flex min-h-11 min-w-0 items-center gap-2 rounded-xl border border-white/10 bg-black/75 px-3 text-sm font-semibold text-white shadow-lg backdrop-blur-xl transition hover:border-outline-strong/40 hover:bg-black/90"
           >
             {session.user.image ? (
               <span
@@ -62,7 +62,7 @@ export function AccountNav() {
               />
             ) : (
               <TbUserCircle
-                className="size-5 shrink-0 text-[#b9df91]"
+                className="size-5 shrink-0 text-accent"
                 aria-hidden="true"
               />
             )}
@@ -89,7 +89,7 @@ export function AccountNav() {
         <Link
           href="/account"
           aria-busy={!isSessionReady}
-          className="font-minecraft-text inline-flex min-h-11 items-center gap-2 rounded-xl border border-[#a6cf74]/35 bg-[#a6cf74] px-4 text-xs font-bold text-[#14200f] shadow-[0_8px_30px_rgba(0,0,0,0.35)] transition hover:bg-[#c0e29d]"
+          className="font-minecraft-text inline-flex min-h-11 items-center gap-2 rounded-xl border border-outline-strong/35 bg-accent px-4 text-xs font-bold text-on-accent shadow-[0_8px_30px_rgba(0,0,0,0.35)] transition hover:bg-accent-soft"
         >
           {!isSessionReady ? (
             <TbLoader2 className="size-4 animate-spin" aria-hidden="true" />
