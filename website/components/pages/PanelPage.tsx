@@ -18,6 +18,7 @@ import {
   TbUsers,
 } from "react-icons/tb";
 
+import { LicensingManagement } from "@/components/panel/LicensingManagement";
 import { authClient } from "@/lib/auth-client";
 
 type Dashboard = {
@@ -165,6 +166,8 @@ type Activity = {
 
 type PlanSelection = "none" | "monthly" | "lifetime" | "aether";
 type PanelTab =
+  | "plans"
+  | "settings"
   | "overview"
   | "coupons"
   | "accounts"
@@ -178,6 +181,8 @@ const panelTabs: {
   icon: typeof TbChartBar;
 }[] = [
   { id: "overview", label: "Visão geral", icon: TbChartBar },
+  { id: "plans", label: "Planos", icon: TbTag },
+  { id: "settings", label: "Licenciamento", icon: TbShieldCheck },
   { id: "coupons", label: "Cupons", icon: TbTag },
   { id: "accounts", label: "Contas", icon: TbUsers },
   { id: "access", label: "Acessos", icon: TbShieldCheck },
@@ -1152,6 +1157,24 @@ export function PanelPage() {
             })}
           </div>
 
+          {activeTab === "plans" && (
+            <section
+              id="panel-tabpanel-plans"
+              role="tabpanel"
+              aria-labelledby="panel-tab-plans"
+            >
+              <LicensingManagement mode="plans" />
+            </section>
+          )}
+          {activeTab === "settings" && (
+            <section
+              id="panel-tabpanel-settings"
+              role="tabpanel"
+              aria-labelledby="panel-tab-settings"
+            >
+              <LicensingManagement mode="settings" />
+            </section>
+          )}
           <div
             id="panel-tabpanel-overview"
             role="tabpanel"

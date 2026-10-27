@@ -39,7 +39,30 @@ A aparência oferece Padrão, The End e Aether, com variáveis semânticas de co
 fundo Minecraft em CSS e controle de movimento. O loading reutiliza o mesmo
 fundo. Preferências ficam no navegador e são aplicadas antes da primeira pintura.
 
-O painel exige a role `owner` no servidor e organiza visão geral, cupons,
-contas, acessos, cobranças e auditoria em abas com navegação por teclado.
-Para testar a interface sem alterar dados reais, use respostas simuladas;
-OAuth e pagamentos reais precisam de validação em um ambiente sandbox.
+O painel valida a sessão e a role `owner` no servidor e organiza visão geral,
+cupons, contas, acessos, cobranças, planos, licenciamento e auditoria em abas.
+Planos e políticas são persistidos na API, com motivo, confirmação e controle
+de versão. O preview mostra o preço promocional efetivo; alterações não
+modificam os contratos anteriormente aceitos no Mercado Pago.
+
+Na beta.3, `/account` permite consultar administrador, versões, licença e
+histórico por servidor em um modal de quatro abas, com avatar/skin e fallback.
+O status online vem de heartbeat autenticado, separado da autorização da
+licença. Identidade reportada pelo plugin aparece como não verificada;
+UUID e skin não comprovam titularidade Microsoft. Dados opcionais, quando
+consentidos, aparecem mascarados e podem ser excluídos.
+
+Trial pode coexistir com um acesso pago. O carrinho consulta o crédito real de
+upgrade mensal para vitalício no backend e envia o total esperado para recusar
+orçamentos desatualizados. Preços, limites, recursos e disponibilidade vêm da
+configuração persistente, sem exigir rebuild para alterações do painel.
+Compras pendentes podem ser retomadas pela URL HTTPS persistida na API. Quando
+o pagamento foi recebido e falta cancelar a renovação anterior, a interface
+mostra a finalização do upgrade e permite consultar seu estado. O painel exibe
+as falhas de criação/cancelamento registradas no provedor.
+
+Os roteiros locais podem usar API e MongoDB descartáveis com sessões reais.
+OAuth público, pagamentos no provedor e operação do plugin em PaperMC real
+exigem validação externa. Consulte o
+[guia beta.3](../docs/LICENCIAMENTO_BETA3.md) para migração, protocolo,
+privacidade e cenários de aceite.

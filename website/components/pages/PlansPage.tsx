@@ -14,10 +14,19 @@ import {
   TbShoppingCart,
 } from "react-icons/tb";
 import { useCart } from "@/components/cart/CartProvider";
+import {
+  PendingCheckout,
+  type PendingPurchase,
+} from "@/components/cart/PendingCheckout";
+import {
+  type OfferDetails,
+  PlanPromotion,
+} from "@/components/ui/PlanPromotion";
 import { SiteLoadingScreen } from "@/components/ui/SiteLoadingScreen";
 import { useHydrated } from "@/hooks/useHydrated";
 import { useLoadingDelay } from "@/hooks/useLoadingDelay";
 import { authClient } from "@/lib/auth-client";
+import { formatBillingInterval } from "@/lib/commercial-display";
 
 type PlanId = "free" | "monthly" | "lifetime" | "aether";
 
@@ -32,12 +41,13 @@ type BillingState = {
     canCancelSubscription?: boolean;
   };
   temporaryLicense?: null | { code: string; expiresAt: string };
-  lastPurchase: null | { plan: string; status: string; createdAt: string };
+  lastPurchase: PendingPurchase | null;
   additionalServerSlots?: number;
+  upgrade?: { creditCents: number; endsAt: string | null; eligible: boolean };
 };
 type PlanCatalog = {
   trialEnabled: boolean;
-  plans: { id: string; amount: number; formattedPrice: string }[];
+  plans: OfferDetails[];
   serverSlot?: {
     amount: number;
     formattedPrice: string;
@@ -66,28 +76,28 @@ const formatTrialCountdown = (seconds: number) => {
 
 const perks = {
   free: [
-    "Licença Plus temporária por 12 horas",
-    "Até 1 servidor ativo",
+    "Licença temporária independente do plano pago",
+    "Validade definida no momento da ativação",
     "Consulte novamente a mesma key nesta página enquanto o acesso estiver ativo",
     "Disponível uma única vez por conta",
     "A key deixa de funcionar quando o acesso termina",
   ],
   monthly: [
     "Acesso Premium/Plus",
-    "Cobrança recorrente mensal",
-    "Até 3 servidores por licença",
+    "Recorrência definida no momento da contratação",
+    "Seu limite contratado permanece registrado na licença",
     "Cancele a renovação e mantenha o período pago",
   ],
   lifetime: [
     "Acesso vitalício Premium/Plus",
     "Pagamento único",
-    "Até 5 servidores por licença",
+    "A licença acompanha o crescimento da sua rede",
     "Sem renovação mensal",
   ],
   aether: [
     "Acesso vitalício Premium/Plus",
     "Pagamento único",
-    "Até 250 servidores por licença",
+    "Capacidade para redes com várias instalações",
     "Vagas extras disponíveis no carrinho",
   ],
 };
@@ -149,7 +159,9 @@ export function PlansPage() {
     setCouponCode,
     settlePurchase,
   } = useCart();
-  const [state, setState] = useState<BillingState>();
+  const [billingState, setState] = useState<BillingState>();
+  const [billingOwner, setBillingOwner] = useState<string>();
+  const billingRequest = useRef<AbortController | null>(null);
   const [catalog, setCatalog] = useState<PlanCatalog>();
   const [slotQuantity, setSlotQuantity] = useState(1);
   const handledPurchaseRef = useRef<string | null>(null);
@@ -181,6 +193,11 @@ export function PlansPage() {
   >(null);
   const temporaryLicenseScope = session?.user.id ?? "guest";
   const sessionUserId = session?.user.id;
+  const sessionScope = useRef(sessionUserId);
+  useEffect(() => {
+    sessionScope.current = sessionUserId;
+  }, [sessionUserId]);
+  const state = billingOwner === sessionUserId ? billingState : undefined;
   const temporaryLicenseReady =
     isSessionReady && temporaryLicenseLoadedFor === temporaryLicenseScope;
   const currentTemporaryLicense =
@@ -189,22 +206,31 @@ export function PlansPage() {
       : null;
 
   const refresh = useCallback(async () => {
-    if (!session) {
+    if (sessionScope.current !== sessionUserId) return;
+    billingRequest.current?.abort();
+    if (!sessionUserId) {
       setState(undefined);
+      setBillingOwner(undefined);
       setLoading(false);
       setInitialStateLoaded(true);
       return;
     }
+    const controller = new AbortController();
+    billingRequest.current = controller;
     setLoading(true);
     try {
       const response = await fetch("/billing/state", {
         credentials: "include",
         cache: "no-store",
+        signal: controller.signal,
       });
       if (!response.ok) throw new Error();
       const nextState = (await response.json()) as BillingState;
+      if (controller.signal.aborted || sessionScope.current !== sessionUserId)
+        return;
       setState(nextState);
-      const accountId = session.user.id;
+      setBillingOwner(sessionUserId);
+      const accountId = sessionUserId;
       if (
         nextState.temporaryLicense &&
         Date.parse(nextState.temporaryLicense.expiresAt) > Date.now()
@@ -234,15 +260,19 @@ export function PlansPage() {
       }
       setError("");
     } catch {
+      if (controller.signal.aborted) return;
       setError("Não foi possível consultar seus planos. Tente novamente.");
     } finally {
-      setLoading(false);
-      setInitialStateLoaded(true);
+      if (!controller.signal.aborted) {
+        setLoading(false);
+        setInitialStateLoaded(true);
+      }
     }
-  }, [session]);
+  }, [sessionUserId]);
 
   useEffect(() => {
     if (!sessionPending) void refresh();
+    return () => billingRequest.current?.abort();
   }, [refresh, sessionPending]);
 
   useEffect(() => {
@@ -298,8 +328,10 @@ export function PlansPage() {
       return;
     handledPurchaseRef.current = reference;
     let cancelled = false;
+    let completed = false;
 
     async function checkPurchase() {
+      let pendingMessage = "";
       for (let attempt = 0; attempt < 9 && !cancelled; attempt += 1) {
         try {
           const response = await fetch(`/billing/purchase/${reference}`, {
@@ -311,29 +343,51 @@ export function PlansPage() {
               plan: string;
               serverSlots?: number;
               status: string;
+              message?: string;
+              upgradeCreditReversed?: boolean;
             };
+            if (cancelled) return;
+            if (purchase.upgradeCreditReversed) {
+              completed = true;
+              setMessage(
+                purchase.message ??
+                  "O crédito deste upgrade foi estornado. A compra precisa de revisão pelo suporte.",
+              );
+              await refresh();
+              return;
+            }
             if (purchase.status === "approved") {
+              completed = true;
               const purchasedSlots = Math.max(
                 0,
                 Number(purchase.serverSlots ?? 0),
               );
-              settlePurchase(purchase.plan, purchasedSlots);
+              settlePurchase(
+                purchase.plan,
+                purchasedSlots,
+                reference as string,
+              );
               setMessage(
                 purchase.plan === "server_slots"
                   ? `${purchasedSlots} ${purchasedSlots === 1 ? "vaga extra foi confirmada" : "vagas extras foram confirmadas"} e já estão disponíveis na sua licença.`
                   : purchase.plan === "monthly"
-                    ? "Primeira cobrança confirmada. Seu acesso Creeper está ativo."
-                    : `Pagamento confirmado. Seu ${purchase.plan === "aether" ? "Aether" : "Ender Dragon"} está ativo${purchasedSlots > 0 ? ` com ${purchasedSlots} ${purchasedSlots === 1 ? "vaga extra" : "vagas extras"}` : ""}.`,
+                    ? "Cobrança confirmada. Consulte a validade atual da licença na sua conta."
+                    : `Pagamento confirmado${purchasedSlots > 0 ? ` com ${purchasedSlots} ${purchasedSlots === 1 ? "vaga extra" : "vagas extras"}` : ""}. Consulte a licença na sua conta.`,
               );
               setReturnStatus("success");
               await refresh();
               return;
+            }
+            if (purchase.message) {
+              pendingMessage = purchase.message;
+              setMessage(pendingMessage);
             }
             if (
               ["rejected", "cancelled", "refunded", "charged_back"].includes(
                 purchase.status,
               )
             ) {
+              completed = true;
               setMessage(
                 "A compra não foi aprovada. Os itens continuam no carrinho para você tentar novamente.",
               );
@@ -347,13 +401,16 @@ export function PlansPage() {
       }
       if (!cancelled)
         setMessage(
-          "Pagamento ainda em processamento. Seus itens continuam no carrinho e a página atualizará o acesso após a confirmação.",
+          pendingMessage ||
+            "Pagamento ainda em processamento. Seus itens continuam no carrinho e a página atualizará o acesso após a confirmação.",
         );
     }
 
     void checkPurchase();
     return () => {
       cancelled = true;
+      if (!completed && handledPurchaseRef.current === reference)
+        handledPurchaseRef.current = null;
     };
   }, [sessionUserId, cartReady, refresh, settlePurchase]);
 
@@ -536,6 +593,11 @@ export function PlansPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           plan,
+          expectedTotalCents: Math.round(
+            (couponValidatedCode === cart.couponCode && couponQuote
+              ? couponQuote.total
+              : (catalog?.plans.find((p) => p.id === plan)?.amount ?? 0)) * 100,
+          ),
           ...(cart.couponCode ? { couponCode: cart.couponCode } : {}),
           returnTo: "/plans",
         }),
@@ -552,6 +614,7 @@ export function PlansPage() {
         throw new Error("Checkout indisponível.");
       window.location.assign(result.checkoutUrl);
     } catch (e) {
+      await refresh();
       setError(
         e instanceof Error ? e.message : "Não foi possível iniciar o checkout.",
       );
@@ -674,13 +737,22 @@ export function PlansPage() {
           : access?.plan === "free" && access.status === "trial"
             ? "Trial Key"
             : "Acesso básico";
-  const planChoices: PlanId[] = catalog?.trialEnabled
-    ? ["free", "monthly", "lifetime", "aether"]
+  const planChoices: PlanId[] = catalog
+    ? catalog.plans.map((plan) => plan.id as PlanId)
     : ["monthly", "lifetime", "aether"];
   const visibleSelectedPlan = planChoices.includes(selectedPlan)
     ? selectedPlan
-    : "monthly";
-  const selectedProduct = planDetails[visibleSelectedPlan];
+    : (planChoices[0] ?? "monthly");
+  const selectedOffer = catalog?.plans.find(
+    (plan) => plan.id === visibleSelectedPlan,
+  );
+  const billingInterval = selectedOffer
+    ? formatBillingInterval(selectedOffer)
+    : null;
+  const selectedProduct = {
+    ...planDetails[visibleSelectedPlan],
+    name: selectedOffer?.name ?? planDetails[visibleSelectedPlan].name,
+  };
   const selectedPrice =
     visibleSelectedPlan === "free"
       ? "Grátis"
@@ -756,15 +828,19 @@ export function PlansPage() {
         ? "Verificando sessão…"
         : !session
           ? "Entrar para assinar"
-          : access?.status === "pending"
-            ? "Aguardando confirmação"
-            : access?.status === "past_due"
-              ? "Regularize sua assinatura"
-              : activePaid
-                ? "Você já tem acesso ativo"
-                : visibleSelectedPlan === "monthly"
-                  ? "Assinar o Creeper"
-                  : "Desbloquear Ender Dragon";
+          : access?.plan === "monthly" &&
+              visibleSelectedPlan !== "monthly" &&
+              visibleSelectedPlan !== "free"
+            ? "Fazer upgrade para vitalício"
+            : access?.status === "pending"
+              ? "Aguardando confirmação"
+              : access?.status === "past_due"
+                ? "Regularize sua assinatura"
+                : activePaid
+                  ? "Você já tem acesso ativo"
+                  : visibleSelectedPlan === "monthly"
+                    ? `Assinar ${selectedProduct.name}`
+                    : "Desbloquear Ender Dragon";
   const isPageLoading =
     !isSessionReady ||
     !temporaryLicenseReady ||
@@ -778,7 +854,8 @@ export function PlansPage() {
   const canBuyExtraSlots = activePaid || Boolean(cart.plan);
 
   function addOneTimePlanToCart(plan: "lifetime" | "aether") {
-    if (activePaid || subscriptionBlocked) return;
+    if ((activePaid && access?.plan !== "monthly") || subscriptionBlocked)
+      return;
     setPlan(plan);
     setMessage(
       `${plan === "aether" ? "Aether" : "Ender Dragon"} adicionado ao carrinho.`,
@@ -873,6 +950,14 @@ export function PlansPage() {
           </div>
         </header>
 
+        <div className="mx-auto max-w-6xl">
+          <PendingCheckout
+            purchase={state?.lastPurchase}
+            refreshing={loading}
+            onRefresh={() => void refresh()}
+          />
+        </div>
+
         {isSessionReady && session && (
           <section
             aria-label="Estado da sua assinatura"
@@ -959,9 +1044,9 @@ export function PlansPage() {
               className="mx-auto mb-5 max-w-6xl border-l-4 border-[#e3bd59] bg-warning-surface px-4 py-3 text-sm leading-6 text-amber-100"
             >
               {trialWindowExpired
-                ? "O período de 12 horas terminou. A key não é mais exibida nem pode ser gerada novamente."
+                ? "O período do Trial terminou. A key não é mais exibida nem pode ser gerada novamente."
                 : access?.trialExpiresAt
-                  ? "O Trial já foi usado. A mesma key pode ser consultada novamente nesta página até completar 12 horas; depois, deixa de ser exibida."
+                  ? "O Trial já foi usado. A mesma key pode ser consultada enquanto estiver válida; depois, deixa de ser exibida."
                   : "Este Trial foi emitido antes da recuperação automática da key. Ela não está disponível para consulta e não pode ser gerada novamente."}
             </output>
           )}
@@ -1066,12 +1151,23 @@ export function PlansPage() {
             </div>
 
             <div className="p-3 sm:p-5">
+              {catalog && planChoices.length === 0 && (
+                <output className="mb-4 border border-outline p-4 text-sm text-muted">
+                  Nenhum plano está disponível no catálogo neste momento. Seu
+                  acesso contratado continua disponível na conta.
+                </output>
+              )}
               <fieldset
                 aria-label="Escolha uma licença"
                 className={`grid gap-2 sm:gap-3 ${catalog?.trialEnabled ? "grid-cols-2 md:grid-cols-4" : "grid-cols-3"}`}
               >
                 {planChoices.map((plan, index) => {
-                  const details = planDetails[plan];
+                  const details = {
+                    ...planDetails[plan],
+                    name:
+                      catalog?.plans.find((item) => item.id === plan)?.name ??
+                      planDetails[plan].name,
+                  };
                   const price =
                     plan === "free"
                       ? "Grátis"
@@ -1171,8 +1267,20 @@ export function PlansPage() {
                       </span>
                     )}
                   </div>
+                  {access?.plan === "monthly" &&
+                    ["lifetime", "aether"].includes(visibleSelectedPlan) && (
+                      <p className="mt-3 border-l-2 border-outline-strong bg-surface-raised p-3 text-xs leading-5 text-accent-soft">
+                        Upgrade mantém sua licença e seus servidores.{" "}
+                        {state?.upgrade?.creditCents
+                          ? `No primeiro mês, o carrinho desconta os ${new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(state.upgrade.creditCents / 100)} efetivamente pagos no mensal.`
+                          : "Após o primeiro mês, aplica-se o preço integral do vitalício."}{" "}
+                        A renovação mensal é encerrada ao confirmar o upgrade.
+                      </p>
+                    )}
                   <p className="mt-3 text-sm leading-6 text-white/60">
-                    {selectedProduct.description}
+                    {catalog?.plans.find(
+                      (plan) => plan.id === visibleSelectedPlan,
+                    )?.description || selectedProduct.description}
                   </p>
 
                   <div className="my-5 flex flex-wrap items-end justify-between gap-3 border-y border-outline/30 py-4">
@@ -1180,6 +1288,11 @@ export function PlansPage() {
                       <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-white/35">
                         Valor do item
                       </p>
+                      <PlanPromotion
+                        offer={catalog?.plans.find(
+                          (plan) => plan.id === visibleSelectedPlan,
+                        )}
+                      />
                       <p className="mt-1 text-3xl font-black tracking-tight text-white sm:text-4xl">
                         {visibleSelectedPlan === "monthly" &&
                         couponValidatedCode === cart.couponCode &&
@@ -1205,9 +1318,9 @@ export function PlansPage() {
                     </div>
                     <p className="pb-1 text-right text-xs leading-5 text-white/45">
                       {visibleSelectedPlan === "free"
-                        ? "12 horas · sem cobrança"
+                        ? `${selectedOffer?.durationHours ?? "—"} horas · sem cobrança`
                         : visibleSelectedPlan === "monthly"
-                          ? "Cobrança recorrente mensal"
+                          ? `Cobrança recorrente a cada ${billingInterval ?? "período contratado"}`
                           : "Pagamento único · sem renovação"}
                     </p>
                   </div>
@@ -1274,7 +1387,14 @@ export function PlansPage() {
                   )}
 
                   <ul className="grid gap-2.5 text-xs leading-5 text-white/75 sm:text-sm">
-                    {perks[visibleSelectedPlan].map((perk) => (
+                    {[
+                      ...(selectedOffer?.serverLimit
+                        ? [
+                            `Até ${selectedOffer.serverLimit} servidores por licença`,
+                          ]
+                        : []),
+                      ...perks[visibleSelectedPlan],
+                    ].map((perk) => (
                       <li key={perk} className="flex items-start gap-2.5">
                         <TbCheck
                           aria-hidden="true"
@@ -1305,8 +1425,8 @@ export function PlansPage() {
                           loading ||
                           trialAlreadyUsed ||
                           busy === "free" ||
-                          activePaid ||
-                          access?.status === "pending"
+                          catalog?.plans.find((plan) => plan.id === "free")
+                            ?.enabled === false
                         }
                         className="font-minecraft-text inline-flex min-h-12 w-full items-center justify-center gap-2 border-b-4 border-accent-edge bg-accent-strong px-4 text-sm font-bold text-on-strong transition hover:bg-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:border-outline disabled:bg-disabled disabled:text-subtle"
                       >
@@ -1323,7 +1443,15 @@ export function PlansPage() {
                         }
                         disabled={
                           !catalog ||
-                          Boolean(activePaid) ||
+                          !selectedOffer ||
+                          Boolean(
+                            activePaid &&
+                              (visibleSelectedPlan === "monthly" ||
+                                access?.plan !== "monthly"),
+                          ) ||
+                          catalog?.plans.find(
+                            (plan) => plan.id === visibleSelectedPlan,
+                          )?.enabled === false ||
                           Boolean(subscriptionBlocked) ||
                           busy === visibleSelectedPlan ||
                           (visibleSelectedPlan !== "monthly" &&

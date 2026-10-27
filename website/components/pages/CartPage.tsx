@@ -13,11 +13,19 @@ import {
 } from "react-icons/tb";
 
 import { useCart } from "@/components/cart/CartProvider";
+import {
+  PendingCheckout,
+  type PendingPurchase,
+} from "@/components/cart/PendingCheckout";
+import {
+  type OfferDetails,
+  PlanPromotion,
+} from "@/components/ui/PlanPromotion";
 import { useHydrated } from "@/hooks/useHydrated";
 import { authClient } from "@/lib/auth-client";
 
 type PlanCatalog = {
-  plans: { id: string; amount: number; formattedPrice: string }[];
+  plans: OfferDetails[];
   serverSlot?: {
     amount: number;
     formattedPrice: string;
@@ -26,12 +34,14 @@ type PlanCatalog = {
 };
 
 type BillingState = {
+  lastPurchase?: PendingPurchase | null;
   access: null | {
     plan: "free" | "monthly" | "lifetime" | "aether";
     status: string;
     expiresAt?: string;
   };
   additionalServerSlots?: number;
+  upgrade?: { creditCents: number; endsAt: string | null; eligible: boolean };
 };
 
 type CouponQuote = {
@@ -51,6 +61,10 @@ const currency = new Intl.NumberFormat("pt-BR", {
 export function CartPage() {
   const { data: session, isPending: sessionPending } = authClient.useSession();
   const sessionUserId = session?.user.id;
+  const sessionScope = useRef(sessionUserId);
+  useEffect(() => {
+    sessionScope.current = sessionUserId;
+  }, [sessionUserId]);
   const isSessionReady = useHydrated() && !sessionPending;
   const {
     cart,
@@ -62,7 +76,10 @@ export function CartPage() {
     settlePurchase,
   } = useCart();
   const [catalog, setCatalog] = useState<PlanCatalog>();
-  const [billing, setBilling] = useState<BillingState>();
+  const [billingState, setBilling] = useState<BillingState>();
+  const [billingOwner, setBillingOwner] = useState<string>();
+  const billing = billingOwner === sessionUserId ? billingState : undefined;
+  const billingRequest = useRef<AbortController | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [billingLoading, setBillingLoading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -76,27 +93,39 @@ export function CartPage() {
   const handledPurchaseRef = useRef<string | null>(null);
 
   const refreshBilling = useCallback(async () => {
+    if (sessionScope.current !== sessionUserId) return;
+    billingRequest.current?.abort();
     if (!sessionUserId) {
       setBilling(undefined);
+      setBillingOwner(undefined);
+      setBillingLoading(false);
       return;
     }
+    const controller = new AbortController();
+    billingRequest.current = controller;
     setBillingLoading(true);
     try {
       const response = await fetch("/billing/state", {
         credentials: "include",
         cache: "no-store",
+        signal: controller.signal,
       });
       if (!response.ok)
         throw new Error("Não foi possível consultar seu acesso.");
-      setBilling((await response.json()) as BillingState);
+      const result = (await response.json()) as BillingState;
+      if (controller.signal.aborted || sessionScope.current !== sessionUserId)
+        return;
+      setBilling(result);
+      setBillingOwner(sessionUserId);
     } catch (refreshError) {
+      if (controller.signal.aborted) return;
       setError(
         refreshError instanceof Error
           ? refreshError.message
           : "Não foi possível consultar seu acesso.",
       );
     } finally {
-      setBillingLoading(false);
+      if (!controller.signal.aborted) setBillingLoading(false);
     }
   }, [sessionUserId]);
 
@@ -121,6 +150,7 @@ export function CartPage() {
   useEffect(() => {
     if (!isSessionReady) return;
     void refreshBilling();
+    return () => billingRequest.current?.abort();
   }, [isSessionReady, refreshBilling]);
 
   useEffect(() => {
@@ -141,8 +171,10 @@ export function CartPage() {
       return;
     handledPurchaseRef.current = reference;
     let cancelled = false;
+    let completed = false;
 
     async function checkPurchase() {
+      let pendingMessage = "";
       for (let attempt = 0; attempt < 9 && !cancelled; attempt += 1) {
         try {
           const response = await fetch(`/billing/purchase/${reference}`, {
@@ -154,26 +186,44 @@ export function CartPage() {
               plan: string;
               serverSlots?: number;
               status: string;
+              message?: string;
+              upgradeCreditReversed?: boolean;
             };
+            if (cancelled) return;
+            if (purchase.upgradeCreditReversed) {
+              completed = true;
+              setMessage(
+                purchase.message ??
+                  "O crédito deste upgrade foi estornado. A compra precisa de revisão pelo suporte.",
+              );
+              await refreshBilling();
+              return;
+            }
             if (purchase.status === "approved") {
+              completed = true;
               const slots = Number(purchase.serverSlots ?? 0);
-              settlePurchase(purchase.plan, slots);
+              settlePurchase(purchase.plan, slots, reference as string);
               setMessage(
                 purchase.plan === "server_slots"
                   ? `${slots} ${slots === 1 ? "vaga extra confirmada" : "vagas extras confirmadas"}.`
                   : purchase.plan === "monthly"
-                    ? "Primeira cobrança confirmada. Seu Creeper está ativo."
-                    : `Pagamento confirmado. ${purchase.plan === "aether" ? "Aether" : "Ender Dragon"} já está ativo${slots ? ` com ${slots} ${slots === 1 ? "vaga extra" : "vagas extras"}` : ""}.`,
+                    ? "Cobrança confirmada. Consulte a validade atual da licença na sua conta."
+                    : `Pagamento confirmado${slots ? ` com ${slots} ${slots === 1 ? "vaga extra" : "vagas extras"}` : ""}. Consulte a licença na sua conta.`,
               );
               setReturnStatus("success");
               await refreshBilling();
               return;
+            }
+            if (purchase.message) {
+              pendingMessage = purchase.message;
+              setMessage(pendingMessage);
             }
             if (
               ["rejected", "cancelled", "refunded", "charged_back"].includes(
                 purchase.status,
               )
             ) {
+              completed = true;
               setMessage(
                 "O pagamento não foi aprovado. Os itens continuam no carrinho.",
               );
@@ -187,13 +237,16 @@ export function CartPage() {
       }
       if (!cancelled)
         setMessage(
-          "Pagamento em processamento. O carrinho será atualizado quando a confirmação chegar.",
+          pendingMessage ||
+            "Pagamento em processamento. O carrinho será atualizado quando a confirmação chegar.",
         );
     }
 
     void checkPurchase();
     return () => {
       cancelled = true;
+      if (!completed && handledPurchaseRef.current === reference)
+        handledPurchaseRef.current = null;
     };
   }, [sessionUserId, cartReady, settlePurchase, refreshBilling]);
 
@@ -206,7 +259,9 @@ export function CartPage() {
           access.expiresAt &&
           Date.parse(access.expiresAt) > Date.now())),
   );
-  const planAlreadyActive = Boolean(activePaid && cart.plan);
+  const planAlreadyActive = Boolean(
+    activePaid && cart.plan && access?.plan !== "monthly",
+  );
   const canBuySlots = activePaid || Boolean(cart.plan);
   const maxSlots = catalog?.serverSlot?.maxPerPurchase ?? 99;
   const unitSlotAmount = catalog?.serverSlot?.amount ?? 4.9;
@@ -214,8 +269,18 @@ export function CartPage() {
   const selectedPlan = cart.plan
     ? catalog?.plans.find((plan) => plan.id === cart.plan)
     : undefined;
+  const selectedPlanUnavailable = Boolean(
+    cart.plan && (!selectedPlan || selectedPlan.enabled === false),
+  );
   const total = (selectedPlan?.amount ?? 0) + cart.serverSlots * unitSlotAmount;
-  const couponContextKey = `${cart.plan ?? "server_slots"}:${cart.serverSlots}:${cart.couponCode ?? ""}`;
+  const upgradeCreditCents = cart.plan
+    ? Math.min(
+        Math.round((selectedPlan?.amount ?? 0) * 100),
+        billing?.upgrade?.creditCents ?? 0,
+      )
+    : 0;
+  const upgradeTotal = total - upgradeCreditCents / 100;
+  const couponContextKey = `${cart.plan ?? "server_slots"}:${cart.serverSlots}:${cart.couponCode ?? ""}:${upgradeCreditCents}`;
   const activeCouponQuote =
     couponQuoteKey === couponContextKey ? couponQuote : null;
   const couponCartChanged = Boolean(
@@ -295,6 +360,12 @@ export function CartPage() {
       setError("Seu carrinho está vazio.");
       return;
     }
+    if (selectedPlanUnavailable) {
+      setError(
+        "Este plano não está disponível para novas contratações. Remova-o do carrinho ou escolha outro plano.",
+      );
+      return;
+    }
     if (planAlreadyActive) {
       setError(
         "Sua conta já possui um plano ativo. Remova o plano do carrinho para comprar somente vagas extras.",
@@ -331,6 +402,9 @@ export function CartPage() {
         body: JSON.stringify({
           plan: cart.plan ?? "server_slots",
           serverSlots: cart.serverSlots,
+          expectedTotalCents: Math.round(
+            (activeCouponQuote?.total ?? upgradeTotal) * 100,
+          ),
           ...(cart.couponCode ? { couponCode: cart.couponCode } : {}),
           returnTo: "/cart",
         }),
@@ -342,7 +416,9 @@ export function CartPage() {
         );
       if (
         typeof result.checkoutUrl !== "string" ||
-        !result.checkoutUrl.startsWith("https://")
+        (!result.checkoutUrl.startsWith("https://") &&
+          new URL(result.checkoutUrl, window.location.origin).origin !==
+            window.location.origin)
       ) {
         throw new Error("Checkout indisponível.");
       }
@@ -353,6 +429,7 @@ export function CartPage() {
           ? checkoutError.message
           : "Não foi possível iniciar o checkout.",
       );
+      await refreshBilling();
       setBusy(false);
     }
   }
@@ -390,6 +467,12 @@ export function CartPage() {
           </span>
         </div>
       </header>
+
+      <PendingCheckout
+        purchase={billing?.lastPurchase}
+        refreshing={billingLoading}
+        onRefresh={() => void refreshBilling()}
+      />
 
       {returnStatus && (
         <output
@@ -457,7 +540,7 @@ export function CartPage() {
       ) : (
         <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
           <section aria-label="Itens selecionados" className="grid gap-3">
-            {cart.plan && selectedPlan && (
+            {cart.plan && (
               <article
                 className={`border-2 bg-surface shadow-[0_5px_0_var(--site-shadow)] ${cart.plan === "aether" ? "border-outline-strong/55" : "border-[#8b5cf6]/35"}`}
               >
@@ -467,17 +550,21 @@ export function CartPage() {
                       Acesso vitalício · pagamento único
                     </p>
                     <h2 className="font-minecraft-text mt-1 text-lg font-bold text-white">
-                      {cart.plan === "aether" ? "Aether" : "Ender Dragon"}
+                      {selectedPlan?.name ??
+                        (cart.plan === "aether" ? "Aether" : "Ender Dragon")}
                     </h2>
                     <p className="mt-1 text-xs leading-5 text-white/55">
-                      {cart.plan === "aether"
-                        ? "Até 250 servidores incluídos"
-                        : "Até 5 servidores incluídos"}
+                      {selectedPlanUnavailable
+                        ? "Indisponível para novas contratações; remova este item ou escolha outro plano."
+                        : selectedPlan?.serverLimit
+                          ? `Até ${selectedPlan.serverLimit} servidores incluídos`
+                          : "Limite conforme o plano escolhido"}
                     </p>
                   </div>
                   <div className="flex items-center gap-3">
+                    <PlanPromotion offer={selectedPlan} />
                     <strong className="text-base text-white">
-                      {selectedPlan.formattedPrice}
+                      {selectedPlan?.formattedPrice ?? "Indisponível"}
                     </strong>
                     <button
                       type="button"
@@ -588,7 +675,8 @@ export function CartPage() {
               {cart.plan && (
                 <div className="flex justify-between gap-3 text-white/65">
                   <span>
-                    {cart.plan === "aether" ? "Aether" : "Ender Dragon"}
+                    {selectedPlan?.name ??
+                      (cart.plan === "aether" ? "Aether" : "Ender Dragon")}
                   </span>
                   <span>{selectedPlan?.formattedPrice ?? "—"}</span>
                 </div>
@@ -687,10 +775,26 @@ export function CartPage() {
                   </p>
                 )}
             </div>
+            {upgradeCreditCents > 0 && (
+              <div className="mt-3 border-l-2 border-outline-strong bg-surface-raised p-3 text-xs leading-5 text-accent-soft">
+                <strong>
+                  Crédito do primeiro mês: −
+                  {currency.format(upgradeCreditCents / 100)}
+                </strong>
+                <p>
+                  Corresponde ao pagamento aprovado do mensal, utilizável uma
+                  única vez até{" "}
+                  {billing?.upgrade?.endsAt
+                    ? new Date(billing.upgrade.endsAt).toLocaleString("pt-BR")
+                    : "o fim do primeiro mês"}
+                  . A renovação mensal é encerrada na confirmação.
+                </p>
+              </div>
+            )}
             <div className="flex items-end justify-between gap-3 py-4">
               <span className="text-xs font-semibold text-white/55">Total</span>
               <strong className="font-minecraft-text text-2xl font-black text-white">
-                {currency.format(activeCouponQuote?.total ?? total)}
+                {currency.format(activeCouponQuote?.total ?? upgradeTotal)}
               </strong>
             </div>
             <p className="text-[10px] leading-5 text-white/40">
@@ -703,6 +807,8 @@ export function CartPage() {
               disabled={
                 busy ||
                 !itemCount ||
+                !catalog ||
+                selectedPlanUnavailable ||
                 planAlreadyActive ||
                 couponBusy ||
                 Boolean(cart.couponCode && !activeCouponQuote)

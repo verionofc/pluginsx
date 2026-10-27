@@ -1,3 +1,4 @@
+import type { PlanTerms } from "../../domain/licensing-config.js";
 import { Schema, model } from "mongoose";
 
 export type LicenseTier = "default" | "plus";
@@ -9,31 +10,41 @@ export interface LicenseInterface {
     tier: LicenseTier;
     valid: boolean;
   };
+  planTerms?: PlanTerms;
   serverSlots?: number;
+  activationRevision?: number;
   sourcePlan?: "trial" | "monthly" | "lifetime" | "aether";
   expiresAt?: Date;
   createdAt?: Date;
   updatedAt?: Date;
 }
 
-const LicenseSchema = new Schema<LicenseInterface>({
-  _id: { type: String, required: true },
-  ownerId: { type: String, required: false },
-  value: {
-    tier: {
-      type: String,
-      enum: ["default", "plus"],
-      required: true,
-      default: "default",
+const LicenseSchema = new Schema<LicenseInterface>(
+  {
+    _id: { type: String, required: true },
+    ownerId: { type: String, required: false },
+    value: {
+      tier: {
+        type: String,
+        enum: ["default", "plus"],
+        required: true,
+        default: "default",
+      },
+      valid: { type: Boolean, default: true },
     },
-    valid: { type: Boolean, default: true },
+    // This tracks active and pending reservations; the route enforces the
+    // account's plan capacity, including purchased additional slots.
+    planTerms: Schema.Types.Mixed,
+    activationRevision: { type: Number, default: 0 },
+    serverSlots: { type: Number, default: 0, min: 0 },
+    sourcePlan: {
+      type: String,
+      enum: ["trial", "monthly", "lifetime", "aether"],
+    },
+    expiresAt: { type: Date },
   },
-  // This tracks active and pending reservations; the route enforces the
-  // account's plan capacity, including purchased additional slots.
-  serverSlots: { type: Number, default: 0, min: 0 },
-  sourcePlan: { type: String, enum: ["trial", "monthly", "lifetime", "aether"] },
-  expiresAt: { type: Date },
-}, { timestamps: true });
+  { timestamps: true },
+);
 
 // Sparse uniqueness permits the shared default license while enforcing one
 // account-bound license for each authenticated user.

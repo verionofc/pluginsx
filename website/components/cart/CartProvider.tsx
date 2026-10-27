@@ -6,8 +6,10 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
+import { claimPurchaseReceipt } from "@/lib/purchase-receipts";
 
 export type OneTimePlan = "lifetime" | "aether";
 export type CartState = {
@@ -23,12 +25,16 @@ type CartContextValue = {
   setPlan: (plan: OneTimePlan | null) => void;
   setServerSlots: (quantity: number) => void;
   setCouponCode: (code: string | null) => void;
-  settlePurchase: (plan: string, serverSlots: number) => void;
+  settlePurchase: (
+    plan: string,
+    serverSlots: number,
+    reference: string,
+  ) => void;
 };
 
 const cartStorageKey = "pluginsx:cart:v2";
 const legacyCartStorageKey = "pluginsx:plans-cart:v1";
-const maxServerSlots = 99;
+const maxServerSlots = 1000;
 const emptyCart: CartState = { plan: null, serverSlots: 0, couponCode: null };
 const CartContext = createContext<CartContextValue | null>(null);
 
@@ -74,6 +80,7 @@ export function CartProvider({
 }: Readonly<{ children: React.ReactNode }>) {
   const [cart, setCart] = useState<CartState>(emptyCart);
   const [ready, setReady] = useState(false);
+  const settledReceipts = useRef(new Set<string>());
 
   useEffect(() => {
     setCart(readCart());
@@ -121,16 +128,27 @@ export function CartProvider({
     setCart((current) => ({ ...current, couponCode: normalized }));
   }, []);
 
-  const settlePurchase = useCallback((plan: string, serverSlots: number) => {
-    const purchasedSlots = Number.isSafeInteger(serverSlots)
-      ? Math.max(0, serverSlots)
-      : 0;
-    setCart((current) => ({
-      plan: current.plan === plan ? null : current.plan,
-      serverSlots: Math.max(0, current.serverSlots - purchasedSlots),
-      couponCode: null,
-    }));
-  }, []);
+  const settlePurchase = useCallback(
+    (plan: string, serverSlots: number, reference: string) => {
+      let storage: Storage | undefined;
+      try {
+        storage = window.localStorage;
+      } catch {
+        /* Browser storage is optional. */
+      }
+      if (!claimPurchaseReceipt(reference, settledReceipts.current, storage))
+        return;
+      const purchasedSlots = Number.isSafeInteger(serverSlots)
+        ? Math.max(0, serverSlots)
+        : 0;
+      setCart((current) => ({
+        plan: current.plan === plan ? null : current.plan,
+        serverSlots: Math.max(0, current.serverSlots - purchasedSlots),
+        couponCode: null,
+      }));
+    },
+    [],
+  );
 
   const value = useMemo(
     () => ({

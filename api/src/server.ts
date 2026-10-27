@@ -1,9 +1,16 @@
+import {
+  getLicensingConfig,
+  migrateLicensingBeta3,
+} from "./http/plugins/licensing-config.js";
 import { openapi } from "@elysiajs/openapi";
 import { cors } from "@elysiajs/cors";
 import { Elysia } from "elysia";
 import { node } from "@elysiajs/node";
 import z from "zod";
 import mongoose from "mongoose";
+import { Coupon } from "./database/models/Coupon.js";
+import { CouponAccountUsage } from "./database/models/CouponAccountUsage.js";
+import { CouponRedemption } from "./database/models/CouponRedemption.js";
 
 import { env } from "./env.js";
 import { Package } from "./config/package.js";
@@ -21,12 +28,16 @@ await connectDatabase();
 // Keep the configured account's Better Auth role aligned with the owner seed.
 for (const ownerId of OWNER_USER_IDS) {
   if (!mongoose.isValidObjectId(ownerId)) {
-    throw new Error(`Configured owner account ID is not a Mongo ObjectId: ${ownerId}`);
+    throw new Error(
+      `Configured owner account ID is not a Mongo ObjectId: ${ownerId}`,
+    );
   }
-  const ownerResult = await getDb().collection("user").updateOne(
-    { _id: new mongoose.Types.ObjectId(ownerId) },
-    { $set: { role: OWNER_ROLE } },
-  );
+  const ownerResult = await getDb()
+    .collection("user")
+    .updateOne(
+      { _id: new mongoose.Types.ObjectId(ownerId) },
+      { $set: { role: OWNER_ROLE } },
+    );
   if (ownerResult.matchedCount === 0) {
     logger(`Better Auth owner seed was not found for account ${ownerId}.`);
   }
@@ -65,6 +76,26 @@ const [
   import("./http/routes/panel.js"),
 ]);
 
+const { licensingAdminRoutes } = await import(
+  "./http/routes/licensing-admin.js"
+);
+const { activationRoutes } = await import("./http/routes/activation.js");
+const { minecraftMediaRoutes } = await import(
+  "./http/routes/minecraft-media.js"
+);
+const {
+  LicenseServerEvent,
+  LicenseServerPrivacy,
+  LicenseRequestNonce,
+  LicenseActivationReceipt,
+} = await import("./database/models/LicenseServerEvent.js");
+await Promise.all([
+  LicenseServerEvent.init(),
+  LicenseServerPrivacy.init(),
+  LicenseRequestNonce.init(),
+  LicenseActivationReceipt.init(),
+]);
+
 // Create the unique owner index before accepting premium key requests.
 await License.init();
 await LicenseServer.init();
@@ -74,33 +105,53 @@ await PaymentEvent.init();
 await BillingTransaction.init();
 await AdminAuditLog.init();
 await BillingRateLimit.init();
+await Promise.all([
+  Coupon.init(),
+  CouponAccountUsage.init(),
+  CouponRedemption.init(),
+]);
+await migrateLicensingBeta3();
 
 // Seed one latest payment per legacy purchase into the ledger. Recurring
 // payments received after this deployment are recorded individually by the webhook.
-const legacyPurchases = await PlanPurchase.find({ mercadoPagoPaymentId: { $exists: true, $ne: "" } })
-  .select({ userId: 1, externalReference: 1, mercadoPagoPaymentId: 1, plan: 1, serverSlots: 1, amount: 1, currency: 1, status: 1, updatedAt: 1 })
+const legacyPurchases = await PlanPurchase.find({
+  mercadoPagoPaymentId: { $exists: true, $ne: "" },
+})
+  .select({
+    userId: 1,
+    externalReference: 1,
+    mercadoPagoPaymentId: 1,
+    plan: 1,
+    serverSlots: 1,
+    amount: 1,
+    currency: 1,
+    status: 1,
+    updatedAt: 1,
+  })
   .lean();
 const legacyPaymentUpserts = legacyPurchases.flatMap((purchase) =>
   purchase.mercadoPagoPaymentId
-    ? [{
-        updateOne: {
-          filter: { providerPaymentId: purchase.mercadoPagoPaymentId },
-          update: {
-            $setOnInsert: {
-              userId: purchase.userId,
-              purchaseReference: purchase.externalReference,
-              providerPaymentId: purchase.mercadoPagoPaymentId,
-              plan: purchase.plan,
-              serverSlots: purchase.serverSlots ?? 0,
-              amount: purchase.amount,
-              currency: purchase.currency,
-              status: purchase.status,
-              paidAt: purchase.updatedAt,
+    ? [
+        {
+          updateOne: {
+            filter: { providerPaymentId: purchase.mercadoPagoPaymentId },
+            update: {
+              $setOnInsert: {
+                userId: purchase.userId,
+                purchaseReference: purchase.externalReference,
+                providerPaymentId: purchase.mercadoPagoPaymentId,
+                plan: purchase.plan,
+                serverSlots: purchase.serverSlots ?? 0,
+                amount: purchase.amount,
+                currency: purchase.currency,
+                status: purchase.status,
+                paidAt: purchase.updatedAt,
+              },
             },
+            upsert: true,
           },
-          upsert: true,
         },
-      }]
+      ]
     : [],
 );
 if (legacyPaymentUpserts.length) {
@@ -146,7 +197,8 @@ const app = new Elysia({ name: "PluginsX API", adapter: node() })
           },
           {
             name: "Panel",
-            description: "Painel de vendas e gerenciamento de acesso, exclusivo para owners.",
+            description:
+              "Painel de vendas e gerenciamento de acesso, exclusivo para owners.",
           },
           {
             name: "License",
@@ -161,6 +213,9 @@ const app = new Elysia({ name: "PluginsX API", adapter: node() })
       },
     }),
   )
+  .onBeforeHandle(async () => {
+    await getLicensingConfig();
+  })
   .use(betterAuthPlugin)
 
   // Routes
@@ -169,8 +224,11 @@ const app = new Elysia({ name: "PluginsX API", adapter: node() })
   .use(aboutRoutes)
   .use(licenseRoutes)
   .use(licenseServerRoutes)
+  .use(activationRoutes)
+  .use(minecraftMediaRoutes)
   .use(billingRoutes)
   .use(panelRoutes)
+  .use(licensingAdminRoutes)
   .use(pluginRoutes)
 
   .listen(

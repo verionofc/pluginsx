@@ -7,7 +7,7 @@ PluginsX é um projeto para servidores Minecraft **PaperMC**. O repositório re�
 ## O que faz parte do projeto
 
 - **Website:** planos, carrinho com cupons, conta com inventário de licenças e servidores, personalização visual e painel do proprietário.
-- **API:** catálogo e downloads PaperMC, OAuth, licenças, autorizações de servidores, cobrança Mercado Pago e cupons com limites transacionais.
+- **API:** catálogo e downloads PaperMC, OAuth, licenças, instalações assinadas, heartbeat, cobrança Mercado Pago e cupons com limites transacionais.
 - **SpawnerX:** plugin PaperMC para administrar spawners, com loja, melhorias, raridades e vendas públicas por XP.
 - **Catálogo de releases:** índices JSON e JARs publicados em `builds/`, consumidos pela API.
 
@@ -109,6 +109,20 @@ A documentação OpenAPI da API é servida pelo plugin `@elysiajs/openapi` duran
 
 Os endpoints de plugins aceitam `platform=paper` (também é o padrão). Outras plataformas não são aceitas. Consulte [`api/README.md`](api/README.md) para exemplos detalhados de filtros e downloads.
 
+## Licenciamento beta.3
+
+A beta.3 adiciona identificação do administrador Minecraft, autorização assinada
+por instalação, heartbeat e detalhes auditáveis de servidores em `/account`.
+O painel gerencia planos, promoções, limites, recursos e políticas persistidos
+no banco, preservando as condições de contratos existentes. Trial e um plano
+pago podem coexistir; upgrades de mensal para vitalício podem usar o valor
+comprovado da primeira mensalidade durante o primeiro mês.
+
+Veja o [guia de licenciamento beta.3](docs/LICENCIAMENTO_BETA3.md) para
+migração, privacidade, integração e validação em PaperMC real. A implantação
+da API executa a migração aditiva antes de aceitar conexões; exportar JARs
+localmente não modifica produção.
+
 ## SpawnerX
 
 SpawnerX é um plugin PaperMC que inclui, entre outros recursos:
@@ -146,7 +160,10 @@ Execute os comandos a partir da raiz do repositório:
 (cd plugins/SpawnerX && ./gradlew check)
 ```
 
-A revisão técnica, os testes de integração opcionais e os limites da validação estão em [`docs/REVISAO_PROJETO.md`](docs/REVISAO_PROJETO.md).
+A revisão anterior está em [`docs/REVISAO_PROJETO.md`](docs/REVISAO_PROJETO.md).
+Os testes de integração da beta.3 exigem MongoDB local descartável em replica
+set; configuração e validações externas pendentes estão no
+[guia beta.3](docs/LICENCIAMENTO_BETA3.md).
 
 ## Licença
 

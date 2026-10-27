@@ -91,25 +91,39 @@ repetidas recuperam a mesma key. Um índice único no MongoDB por usuário mant�
 essa regra mesmo quando duas solicitações chegam ao mesmo tempo. Sem sessão, a
 API responde `401`.
 
-O SpawnerX consulta `GET /license/tier?key={chave}` para validar a licença e
-identificar se ela libera recursos `default` ou `plus`. O endpoint `/license/verify`
-continua disponível para clientes que só precisam saber se a chave é válida.
+O SpawnerX beta.3 mantém a consulta `/license/tier` para a licença base
+`default`. Licenças Plus usam o protocolo de instalação assinado descrito abaixo;
+validar a key isoladamente não autoriza um servidor. `/license/verify` e
+`/license/tier` permanecem disponíveis para compatibilidade.
 
 
 ## Planos e pagamentos
 
 O site expõe `/plans`; os endpoints `/billing/*` são autenticados pelo mesmo
 Better Auth e persistem acesso, compras e notificações no MongoDB/Mongoose.
-O arquivo [`plans.json`](plans.json) é a fonte única para moeda,
-preços, nomes, recorrência, duração do Trial, limites de servidores e preço e
-quantidade máxima das vagas extras. `/billing/catalog`, a criação de checkout e
-a validação do limite de licenças leem essa configuração; altere o JSON e
-reinicie a API para aplicar os valores novos. O checkout sempre calcula o total
-no servidor, sem confiar em valores enviados pelo navegador. Novos preços se
-aplicam a novos checkouts; assinaturas existentes mantêm o valor acordado no
-Mercado Pago. Textos promocionais estáticos do site não fazem parte deste
-catálogo e exigem atualização própria no front-end quando os preços forem
-alterados.
+A configuração comercial e as políticas de licenciamento são persistidas em
+`LicensingConfiguration` e editadas em `/panel`. O arquivo
+[`plans.json`](plans.json) fornece somente os valores iniciais de uma base sem
+configuração; editar esse JSON após a migração não altera o catálogo ativo.
+A API atualiza seu cache em até cinco segundos e avalia a vigência das promoções
+no servidor. Alterações salvas não exigem rebuild.
+
+Preços base e promocionais do catálogo são inteiros em centavos. O backend
+calcula o total, aplica cupons e crédito de upgrade e recusa um orçamento
+`expectedTotalCents` desatualizado. Cada contratação guarda `planTerms`, com a
+revisão comercial aceita. Preços e limites de contratos existentes permanecem
+preservados; editar uma oferta não modifica uma assinatura Mercado Pago já
+contratada. A estratégia `new_contracts_only` registra a entrega ou falha ao criar
+cada novo contrato no provedor.
+
+Trial e um plano pago podem coexistir. Mensal e vitalício compartilham um único
+acesso pago por conta. O upgrade para Lifetime/Aether cancela a renovação mensal
+antes de conceder o acesso permanente. Durante o primeiro mês calendário da
+primeira mensalidade comprovada, o crédito usa o valor efetivamente aprovado,
+inclusive descontos, limitado ao preço do destino e reservado uma única vez.
+Não há crédito presumido para concessões administrativas ou pagamentos legados
+sem evidência suficiente. Veja os detalhes operacionais na
+[documentação beta.3](../docs/LICENCIAMENTO_BETA3.md).
 
 Configure no ambiente privado da API:
 
@@ -120,16 +134,12 @@ NEXT_PUBLIC_APP_URL=https://pluginsx.vercel.app
 TEMP_LICENSE_TRIAL_ENABLED=false
 ```
 
-O teste de licença temporária vem desativado. Para exibir o cartão de teste em
-`/plans`, defina `TEMP_LICENSE_TRIAL_ENABLED=true` no ambiente da API e reinicie
-o serviço. O endpoint autenticado `/billing/trial` gera uma key Plus sem
-`ownerId`, válida pela duração configurada em `plans.json`. A key fica salva no armazenamento local do
-navegador e pode ser recuperada pela própria conta enquanto estiver válida. O
-código de recuperação fica associado ao estado da conta somente durante a janela
-configurada; ao expirar, a API deixa de retorná-lo e remove o código salvo. A
-licença não recebe `ownerId`, e uma segunda emissão é bloqueada mesmo após a
-expiração. O MongoDB remove a licença expirada por TTL.
-Para ocultar o teste, volte a variável para `false` e reinicie a API.
+`TEMP_LICENSE_TRIAL_ENABLED` controla apenas a disponibilidade inicial do Trial
+na criação da configuração. Depois, habilitação, visibilidade, duração e limite
+são controlados pelo painel. `/billing/trial` emite uma licença Plus independente,
+recuperável pela própria conta enquanto estiver válida. A segunda emissão fica
+bloqueada mesmo após expirar. O MongoDB remove a key expirada por TTL; a
+expiração é verificada pela API sem depender do momento dessa limpeza.
 
 Use credenciais de teste em implantação de sandbox e credenciais de produção
 somente no deployment de produção. Nunca configure o Access Token como variável
@@ -151,9 +161,9 @@ Endpoints de gerenciamento:
 ```text
 GET  /billing/catalog
 GET  /billing/state                 # requer sessão
-POST /billing/trial                 # requer sessão; opcional; duração definida em plans.json
+POST /billing/trial                 # requer sessão; oferta/duração definidas no painel
 POST /billing/coupon/validate        # requer sessão; { plan, serverSlots, couponCode }
-POST /billing/checkout              # requer sessão; { plan, serverSlots?, couponCode?, returnTo? }
+POST /billing/checkout              # requer sessão; { plan, serverSlots?, couponCode?, returnTo?, expectedTotalCents? }
 POST /billing/cancel                # requer sessão; cancela a renovação mensal
 POST /billing/webhook               # validação de assinatura do Mercado Pago
 GET  /billing/purchase/{reference}  # requer sessão e propriedade da compra
@@ -180,6 +190,9 @@ GET  /panel/transactions?limit=25&offset=0
 GET  /panel/activity
 POST /panel/accounts/lookup  # { "identifier": "ID MongoDB ou e-mail" }
 POST /panel/accounts/access  # plano, vencimento mensal e limite ou ilimitado
+GET  /panel/licensing              # configuração, revisões, alertas e entrega ao provedor
+PATCH /panel/plans/{id}             # plano + expectedVersion, reason, confirm
+PATCH /panel/licensing/settings     # políticas/vagas + expectedVersion, reason, confirm
 ```
 
 O painel não consulta nem retorna chaves de licença. Alterações de plano ficam
@@ -188,13 +201,54 @@ cancela a renovação no Mercado Pago quando há uma assinatura vinculada. A rol
 owner não concede acesso premium automaticamente; o acesso de plano é um dado
 separado, gerenciado pelo painel.
 
-Keys Plus são autorizadas pela existência de um plano pago ativo configurado em
-`plans.json`. Essa mesma regra alimenta a validação pública da key, inclusive
-após o vencimento ou reembolso/contestação. O limite-base de cada plano e o
-limite do Trial também vêm desse arquivo; vagas extras aprovadas somam-se ao
-limite do plano pago e deixam de contar quando a compra é reembolsada ou
-contestada. Cancelar uma assinatura mantém o acesso e as vagas extras até o fim
-do período registrado como pago.
+Keys Plus dependem de acesso vigente no backend, inclusive após expiração,
+reembolso ou contestação. Vagas extras aprovadas somam-se ao limite aceito do
+plano pago. Reduzir um limite no catálogo não remove servidores existentes.
+Uma redução explícita de limite de uma conta impede novas aprovações acima da
+capacidade, preservando as vinculações existentes. Cancelar a renovação mantém
+o acesso durante o período já pago.
+
+## Instalações beta.3
+
+O plugin assina os pedidos com uma identidade Ed25519 própria. A API verifica a
+assinatura, timestamp e nonce, registra a solicitação idempotente e exige
+aprovação do titular autenticado. A validade inicial é de 12 minutos, ajustável
+no painel. Após aprovação, somente a instalação correspondente recebe uma
+credencial; o banco guarda seu hash. Heartbeats assinados e autenticados
+determinam a comunicação recente separadamente do estado da autorização.
+
+```text
+POST /license/servers/activation-requests # envelope assinado; cria/recupera pedido
+POST /license/servers/poll                # envelope assinado; consulta aprovação
+POST /license/servers/heartbeat           # envelope + Bearer da instalação
+POST /license/servers/privacy             # exclusão opcional pelo configurador
+GET  /license/servers                     # inventário do titular autenticado
+GET  /license/servers/{id}                # detalhes/histórico do titular
+POST /license/servers/{id}/approve        # { confirm: true }
+POST /license/servers/{id}/reject          # { confirm: true }
+POST /license/servers/{id}/remove          # { confirm: true }; revoga vinculação
+DELETE /license/servers/{id}/privacy       # { confirm: true }; titular
+```
+
+As rotas mantêm o prefixo existente `/license/servers`; não foi criado um segundo
+sistema em `/api/licenses`. Os endpoints legados `/request` e `/status` são
+preservados conforme a política de compatibilidade. Eles não recebem credenciais
+beta.3 nem comprovam identidade de uma instalação assinada.
+
+As informações públicas do configurador são declaradas pela instalação e ficam
+`UNVERIFIED`; console recebe `NOT_APPLICABLE`. `onlineMode`, modo de autenticação
+e confiança no encaminhamento do proxy são registrados separadamente.
+UUID, skin ou servidor em modo online não representam verificação independente
+da conta Microsoft. Avatar e skin usam proxy de mídia com UUID validado,
+cache e fallback local; o perfil NameMC usa esse identificador público.
+
+A coleta opcional de IP fica desativada inicialmente. Exige política do backend,
+configuração local e consentimento informado do jogador na versão vigente.
+IP é criptografado com AES-256-GCM; a interface recebe somente máscara e
+localização aproximada. `IPINFO_TOKEN` privado é necessário para habilitar a
+consulta opcional de região/cidade. O serviço continua funcionando sem esses
+dados. Retenção, exclusão e migrações estão detalhadas no
+[guia beta.3](../docs/LICENCIAMENTO_BETA3.md).
 
 ## Cupons e identificação de servidores
 
@@ -229,6 +283,7 @@ replica set, com um banco chamado `pluginsx_coupon_test`:
 COUPON_TEST_MONGODB_URI='mongodb://127.0.0.1:27017/pluginsx_coupon_test?replicaSet=test' bun test src
 ```
 
-Essa opção limpa as cinco coleções de teste entre cenários e rejeita URLs
-remotas ou outros nomes de banco. Sem a variável, os testes de integração são
+Essa opção limpa as coleções usadas pelas fixtures entre cenários, incluindo
+dados de sessão, licenciamento e cobrança. Rejeita URLs remotas ou outros nomes
+de banco. Nunca aponte a suíte para uma base utilizada por outro serviço. Sem a variável, os testes de integração são
 omitidos e os testes de domínio continuam executando normalmente.

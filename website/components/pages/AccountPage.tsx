@@ -28,6 +28,7 @@ import {
   MonthlyBillingCountdown,
   type MonthlyBillingInfo,
 } from "@/components/account/MonthlyBillingCountdown";
+import { ServerDetailsDialog } from "@/components/account/ServerDetailsDialog";
 import { ServerItemIcon } from "@/components/account/ServerItemIcon";
 import { ServerProfileEditor } from "@/components/account/ServerProfileEditor";
 import { SiteLoadingScreen } from "@/components/ui/SiteLoadingScreen";
@@ -62,11 +63,19 @@ type ServerActivation = ServerProfileFields & {
   createdAt: string;
   lastValidatedAt: string | null;
   connection: string;
+  activatedBy?: {
+    executionType: "PLAYER" | "CONSOLE";
+    username: string | null;
+    uuid: string | null;
+  } | null;
+  approvedAt?: string | null;
+  lastHeartbeatAt?: string | null;
 };
 
 type AccountLicense = {
   id: string;
   tier: string;
+  planName?: string;
   valid: boolean;
   plan: "trial" | "monthly" | "lifetime" | "aether" | null;
   expiresAt?: string | null;
@@ -136,6 +145,7 @@ function formatDate(value: string | null | undefined) {
 }
 
 function getPlanName(license: AccountLicense) {
+  if (license.planName) return license.planName;
   if (license.plan === "trial") return "Trial";
   if (license.plan === "monthly") return "Creeper";
   if (license.plan === "lifetime") return "Ender Dragon";
@@ -213,6 +223,7 @@ function TrialCountdown({
 }
 
 function LicensesPanel() {
+  const [detailsServerId, setDetailsServerId] = useState<string | null>(null);
   const [licenses, setLicenses] = useState<AccountLicense[]>([]);
   const [expiredTrials, setExpiredTrials] = useState<Set<string>>(
     () => new Set(),
@@ -446,6 +457,8 @@ function LicensesPanel() {
       const response = await fetch(`/license/servers/${server.id}/${action}`, {
         method: "POST",
         credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm: true }),
       });
 
       if (!response.ok) {
@@ -981,15 +994,22 @@ function LicensesPanel() {
                                   <p>
                                     Conexão{" "}
                                     <strong className="text-white">
-                                      {server.connection === "UNKNOWN"
-                                        ? "Sem informação"
-                                        : server.connection}
+                                      {server.connection === "ONLINE"
+                                        ? "Online"
+                                        : server.connection === "OFFLINE"
+                                          ? "Sem comunicação recente"
+                                          : server.connection === "UNKNOWN"
+                                            ? "Não confirmada"
+                                            : "Inativo"}
                                     </strong>
                                   </p>
                                   <p className="sm:col-span-2">
-                                    Última validação{" "}
+                                    Última comunicação{" "}
                                     <strong className="text-white">
-                                      {formatDate(server.lastValidatedAt)}
+                                      {formatDate(
+                                        server.lastHeartbeatAt ??
+                                          server.lastValidatedAt,
+                                      )}
                                     </strong>
                                     <span className="mx-2 text-white/35">
                                       ·
@@ -1001,7 +1021,28 @@ function LicensesPanel() {
                                   </p>
                                 </div>
 
+                                <p className="mt-3 text-xs text-muted">
+                                  Responsável:{" "}
+                                  <strong className="text-foreground">
+                                    {server.activatedBy?.username ??
+                                      (server.activatedBy?.executionType ===
+                                      "CONSOLE"
+                                        ? "Console"
+                                        : "Não registrado")}
+                                  </strong>{" "}
+                                  · ID {server.serverId.slice(0, 8)} · Ativação{" "}
+                                  {formatDate(server.approvedAt)}
+                                </p>
                                 <div className="mt-3 flex flex-wrap gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setDetailsServerId(server.id)
+                                    }
+                                    className="min-h-10 border border-outline px-3 text-xs font-semibold text-accent-soft hover:bg-surface-raised"
+                                  >
+                                    Ver detalhes
+                                  </button>
                                   {server.state === "PENDING" && (
                                     <>
                                       <button
@@ -1088,6 +1129,13 @@ function LicensesPanel() {
           )}
         </div>
       </section>
+      {detailsServerId && (
+        <ServerDetailsDialog
+          key={detailsServerId}
+          serverId={detailsServerId}
+          onClose={() => setDetailsServerId(null)}
+        />
+      )}
       {editingServer && (
         <ServerProfileEditor
           key={editingServer.id}
