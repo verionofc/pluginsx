@@ -1,0 +1,494 @@
+.purchase-progress,
+.purchase-arrival {
+  --purchase-accent: var(--site-accent-soft);
+  --purchase-edge: var(--site-border-strong);
+}
+.purchase-progress[data-plan="lifetime"],
+.purchase-arrival[data-plan="lifetime"] {
+  --purchase-accent: #d1b8ff;
+  --purchase-edge: #9363c6;
+}
+.purchase-progress[data-plan="aether"],
+.purchase-arrival[data-plan="aether"] {
+  --purchase-accent: #b6efff;
+  --purchase-edge: #68aabd;
+}
+.purchase-progress {
+  position: relative;
+  margin-bottom: 1.5rem;
+  border: 1px solid color-mix(in srgb, var(--purchase-edge) 55%, transparent);
+  background: var(--site-surface);
+  box-shadow: 0 4px 0 var(--site-shadow);
+  overflow: hidden;
+}
+.purchase-progress::before {
+  content: "";
+  display: block;
+  height: 3px;
+  background: linear-gradient(
+    90deg,
+    var(--purchase-edge),
+    var(--purchase-accent),
+    transparent
+  );
+}
+.purchase-progress__header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.15rem 1.2rem;
+}
+.purchase-progress__emblem {
+  flex: 0 0 74px;
+  width: 74px;
+  height: 74px;
+  display: grid;
+  place-items: center;
+  color: var(--purchase-accent);
+  background: color-mix(in srgb, var(--purchase-edge) 10%, var(--site-surface));
+  border: 1px solid color-mix(in srgb, var(--purchase-edge) 30%, transparent);
+}
+.purchase-progress__emblem img {
+  width: 74px;
+  height: 70px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+.purchase-progress__copy {
+  min-width: 0;
+  flex: 1;
+}
+.purchase-progress__eyebrow {
+  margin: 0 0 0.4rem;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--purchase-accent);
+  font-weight: 700;
+}
+.purchase-progress__copy h2 {
+  margin: 0;
+  font-size: clamp(0.85rem, 2.7vw, 1.05rem);
+  font-weight: 700;
+  line-height: 1.6;
+  color: #f3f5ef;
+}
+.purchase-progress__copy > p:last-child {
+  margin: 0.45rem 0 0;
+  max-width: 68ch;
+  font-size: 0.76rem;
+  line-height: 1.8;
+  color: var(--site-text-muted);
+}
+.purchase-progress__dismiss {
+  flex: none;
+  align-self: flex-start;
+  display: grid;
+  place-items: center;
+  min-height: 36px;
+  min-width: 36px;
+  color: var(--site-text-muted);
+  border: 1px solid var(--site-border);
+}
+.purchase-progress__steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  list-style: none;
+  margin: 0 1.2rem 1rem;
+  padding: 0;
+  border: 1px solid var(--site-border);
+}
+.purchase-progress__steps li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0.7rem 0.8rem;
+  color: var(--site-text-muted);
+  font-size: 10px;
+  line-height: 1.6;
+}
+.purchase-progress__steps li + li {
+  border-left: 1px solid var(--site-border);
+}
+.purchase-progress__steps li > span {
+  flex: 0 0 23px;
+  display: grid;
+  place-items: center;
+  width: 23px;
+  height: 23px;
+  border: 1px solid var(--site-border);
+  font-size: 9px;
+}
+.purchase-progress__steps [data-done="true"] {
+  color: var(--purchase-accent);
+  background: color-mix(in srgb, var(--purchase-edge) 7%, transparent);
+}
+.purchase-progress__steps [data-done="true"] > span {
+  border-color: var(--purchase-edge);
+}
+.purchase-progress__steps [aria-current="step"] > span {
+  animation: purchase-wait 2.5s ease-in-out infinite;
+}
+.purchase-progress__footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.85rem 1.2rem;
+  border-top: 1px solid var(--site-border);
+  background: color-mix(in srgb, var(--site-background) 45%, transparent);
+}
+.purchase-progress__reference {
+  font-family: monospace;
+  font-size: 10px;
+  letter-spacing: 0.11em;
+  color: var(--site-text-muted);
+}
+.purchase-progress__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.purchase-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  min-height: 40px;
+  padding: 0.6rem 0.85rem;
+  color: var(--purchase-accent);
+  border: 1px solid color-mix(in srgb, var(--purchase-edge) 60%, transparent);
+  font-size: 11px;
+  font-weight: 700;
+}
+.purchase-action:hover {
+  background: color-mix(in srgb, var(--purchase-edge) 12%, transparent);
+}
+.purchase-action--primary {
+  color: #f6f8f3;
+  border-bottom: 3px solid color-mix(in srgb, var(--purchase-edge) 55%, #000);
+  background: color-mix(in srgb, var(--purchase-edge) 65%, var(--site-surface));
+}
+.purchase-action--primary:hover {
+  background: color-mix(in srgb, var(--purchase-edge) 80%, var(--site-surface));
+}
+.purchase-action:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+.purchase-action:focus-visible,
+.purchase-progress__dismiss:focus-visible,
+.purchase-arrival button:focus-visible {
+  outline: 2px solid var(--purchase-accent);
+  outline-offset: 4px;
+}
+.purchase-progress__connection {
+  margin: 0;
+  border-top: 1px solid var(--site-border);
+  padding: 0.75rem 1.2rem;
+  font-size: 11px;
+  color: #e5c682;
+  line-height: 1.7;
+}
+.purchase-progress[data-phase="ready"] {
+  animation: purchase-card-in 0.6s ease-out;
+}
+.purchase-arrival {
+  inset: 0;
+  margin: auto;
+  height: fit-content;
+  width: min(480px, calc(100vw - 28px));
+  max-height: calc(100dvh - 28px);
+  padding: 0;
+  color: #f4f5f0;
+  background: var(--site-surface);
+  border: 2px solid var(--purchase-edge);
+  box-shadow:
+    0 6px 0 #080d09,
+    0 35px 100px #0009;
+  overflow: auto;
+}
+.purchase-arrival::backdrop {
+  background: #050a08c9;
+  backdrop-filter: blur(7px);
+}
+.purchase-arrival[open] {
+  animation: purchase-arrival-in 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.purchase-arrival__close {
+  position: absolute;
+  z-index: 2;
+  top: 12px;
+  right: 12px;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  color: var(--purchase-accent);
+  background: #080e0bb0;
+  border: 1px solid color-mix(in srgb, var(--purchase-edge) 55%, transparent);
+}
+.purchase-arrival__hero {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 215px;
+  padding: 1.5rem 1.25rem 0.75rem;
+  overflow: hidden;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--purchase-edge) 19%, var(--site-surface)),
+    var(--site-surface)
+  );
+}
+.purchase-arrival__hero::before,
+.purchase-arrival__hero::after {
+  content: "";
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  left: 20%;
+  top: 35%;
+  background: var(--purchase-accent);
+  opacity: 0.5;
+  box-shadow:
+    230px 20px var(--purchase-edge),
+    35px -25px var(--purchase-edge),
+    205px 75px var(--purchase-accent),
+    55px 90px var(--purchase-edge);
+}
+.purchase-arrival__hero::after {
+  transform: rotate(45deg);
+  opacity: 0.2;
+  left: 26%;
+  top: 50%;
+}
+.purchase-arrival__hero > img {
+  position: relative;
+  z-index: 1;
+  width: 235px;
+  height: 175px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  animation: purchase-art-in 0.8s cubic-bezier(0.15, 0.65, 0.2, 1);
+}
+.purchase-arrival__portal {
+  position: absolute;
+  width: 150px;
+  height: 150px;
+  border: 8px double color-mix(in srgb, var(--purchase-edge) 55%, transparent);
+  transform: rotate(45deg);
+  box-shadow:
+    0 0 0 16px color-mix(in srgb, var(--purchase-edge) 5%, transparent),
+    inset 0 0 45px color-mix(in srgb, var(--purchase-edge) 25%, transparent);
+  animation: purchase-portal-in 1.1s ease-out;
+}
+.purchase-arrival__seal {
+  position: absolute;
+  bottom: 16px;
+  right: calc(50% - 110px);
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  color: var(--site-surface);
+  background: var(--purchase-accent);
+  border: 3px solid var(--site-surface);
+  box-shadow: 0 2px 0 var(--purchase-edge);
+}
+.purchase-arrival__content {
+  padding: 0 1.7rem 1.4rem;
+  text-align: center;
+}
+.purchase-arrival__eyebrow {
+  margin: 0.3rem 0 0.7rem;
+  font-size: 9px;
+  color: var(--purchase-accent);
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+.purchase-arrival h2 {
+  margin: 0 auto;
+  max-width: 360px;
+  font-size: clamp(1.05rem, 4vw, 1.4rem);
+  line-height: 1.7;
+  font-weight: 700;
+  outline: none;
+}
+.purchase-arrival__content > p:not(.purchase-arrival__eyebrow) {
+  margin: 0.8rem auto 1.2rem;
+  max-width: 340px;
+  color: var(--site-text-muted);
+  font-size: 12px;
+  line-height: 1.8;
+}
+.purchase-arrival__receipt {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.7rem;
+  margin: 1rem 0;
+  padding: 0.95rem 0;
+  text-align: left;
+  border-block: 1px dashed
+    color-mix(in srgb, var(--purchase-edge) 40%, transparent);
+  font-size: 11px;
+  color: var(--site-text-muted);
+}
+.purchase-arrival__receipt > span:first-child {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--purchase-accent);
+}
+.purchase-arrival__receipt strong {
+  color: #f4f6ef;
+}
+.purchase-arrival__receipt code {
+  font-size: 10px;
+}
+.purchase-arrival__cta {
+  display: flex;
+  width: 100%;
+  min-height: 46px;
+  margin-top: 1.1rem;
+}
+.purchase-arrival__continue {
+  min-height: 38px;
+  margin-top: 0.6rem;
+  padding: 0.5rem 1rem;
+  font-size: 11px;
+  color: var(--site-text-muted);
+}
+.license-card[data-acquired="true"] {
+  scroll-margin-top: 7rem;
+  animation: purchase-license-in 1.1s ease-out;
+}
+@keyframes purchase-wait {
+  50% {
+    border-color: var(--purchase-edge);
+    color: var(--purchase-accent);
+  }
+}
+@keyframes purchase-card-in {
+  from {
+    opacity: 0.7;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes purchase-arrival-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes purchase-art-in {
+  from {
+    opacity: 0;
+    transform: translateY(15px) scale(0.87);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes purchase-portal-in {
+  from {
+    opacity: 0;
+    transform: rotate(25deg) scale(0.7);
+  }
+  to {
+    opacity: 1;
+    transform: rotate(45deg) scale(1);
+  }
+}
+@keyframes purchase-license-in {
+  0% {
+    box-shadow:
+      0 0 0 3px #d1b8ff,
+      0 0 55px #a885d335;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+@media (max-width: 520px) {
+  .purchase-progress__header {
+    align-items: flex-start;
+    padding: 0.9rem;
+    gap: 0.75rem;
+  }
+  .purchase-progress__emblem {
+    flex-basis: 48px;
+    width: 48px;
+    height: 52px;
+  }
+  .purchase-progress__emblem img {
+    width: 47px;
+    height: 50px;
+  }
+  .purchase-progress__steps {
+    margin-inline: 0.9rem;
+  }
+  .purchase-progress__steps li {
+    display: grid;
+    gap: 0.4rem;
+    padding: 0.6rem;
+    font-size: 9px;
+  }
+  .purchase-progress__footer {
+    padding: 0.8rem 0.9rem;
+  }
+  .purchase-progress__actions {
+    width: 100%;
+  }
+  .purchase-progress__actions > * {
+    flex: 1;
+  }
+  .purchase-arrival__hero {
+    min-height: 175px;
+  }
+  .purchase-arrival__hero > img {
+    width: 200px;
+    height: 150px;
+  }
+  .purchase-arrival__portal {
+    width: 125px;
+    height: 125px;
+  }
+  .purchase-arrival__content {
+    padding-inline: 1.2rem;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root .purchase-progress,
+  :root .purchase-progress *,
+  :root .purchase-arrival[open],
+  :root .purchase-arrival *,
+  :root .license-card[data-acquired="true"] {
+    animation: none;
+    scroll-behavior: auto;
+  }
+}
+
+:root[data-scene-motion="off"]
+  :is(
+    .purchase-progress,
+    .purchase-arrival,
+    .license-card[data-acquired="true"]
+  ),
+:root[data-scene-motion="off"] :is(.purchase-progress, .purchase-arrival) * {
+  animation: none;
+  scroll-behavior: auto;
+}

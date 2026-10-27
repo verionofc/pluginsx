@@ -3,6 +3,8 @@ import { PlanAccess } from "../../database/models/PlanAccess.js";
 import { PlanPurchase } from "../../database/models/PlanPurchase.js";
 import { BillingConflict, lockBillingAccount } from "./billing-lock.js";
 import { assertUpgradeCredit } from "./upgrade.js";
+import { ensurePaidPlanLicense } from "./paid-plan-license.js";
+import { License } from "../../database/models/License.js";
 
 /** Grant only from persisted payments; no provider request belongs in this transaction. */
 export async function grantPermanentPurchase(reference: string): Promise<void> {
@@ -49,6 +51,25 @@ export async function grantPermanentPurchase(reference: string): Promise<void> {
     const permanent =
       (current?.plan === "lifetime" || current?.plan === "aether") &&
       current.status === "active";
+    if (
+      current?.status === "revoked" &&
+      current.purchaseReference === reference
+    ) {
+      await PlanPurchase.updateOne(
+        { _id: purchase._id },
+        { $set: { fulfillmentStatus: "revoked" } },
+        { session },
+      );
+      return;
+    }
+    if (permanent && current.plan !== purchase.plan) {
+      await PlanPurchase.updateOne(
+        { _id: purchase._id },
+        { $set: { fulfillmentStatus: "review" } },
+        { session },
+      );
+      return;
+    }
     if (!permanent) {
       await PlanAccess.updateOne(
         { userId: initial.userId },
@@ -77,6 +98,15 @@ export async function grantPermanentPurchase(reference: string): Promise<void> {
         { session },
       );
     }
+    const issued = await ensurePaidPlanLicense(
+      initial.userId,
+      purchase.plan as "lifetime" | "aether",
+      session,
+    );
+    const usable = await License.exists({
+      _id: issued.code,
+      "value.valid": true,
+    }).session(session);
     await PlanPurchase.updateOne(
       { _id: purchase._id },
       {
@@ -84,6 +114,10 @@ export async function grantPermanentPurchase(reference: string): Promise<void> {
           status: "approved",
           providerDeliveryStatus: "applied",
           entitlementCheckoutReserved: false,
+          fulfillmentStatus: usable ? "ready" : "review",
+          ...(usable
+            ? { fulfilledAt: purchase.fulfilledAt ?? new Date() }
+            : {}),
         },
       },
       { session },

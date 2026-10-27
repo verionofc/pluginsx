@@ -27,6 +27,10 @@ export interface PlanPurchaseRecord {
   checkoutUrl?: string;
   entitlementCheckoutReserved?: boolean;
   providerDeliveryStatus?: "pending" | "applied" | "failed";
+  fulfillmentStatus?: "pending" | "processing" | "ready" | "review" | "revoked";
+  fulfilledAt?: Date;
+  lastProviderCheckAt?: Date;
+  providerCheckLeaseUntil?: Date;
   discountAmount?: number;
   couponId?: string;
   couponCode?: string;
@@ -60,6 +64,13 @@ const schema = new Schema<PlanPurchaseRecord>(
     upgradeCreditReversed: Boolean,
     subscriptionCancellationStatus: String,
     providerDeliveryStatus: String,
+    fulfillmentStatus: {
+      type: String,
+      enum: ["pending", "processing", "ready", "review", "revoked"],
+    },
+    fulfilledAt: Date,
+    lastProviderCheckAt: Date,
+    providerCheckLeaseUntil: Date,
     checkoutUrl: String,
     entitlementCheckoutReserved: Boolean,
     regularAmount: { type: Number, min: 0 },

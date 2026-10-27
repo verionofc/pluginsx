@@ -46,9 +46,19 @@ const LicenseSchema = new Schema<LicenseInterface>(
   { timestamps: true },
 );
 
-// Sparse uniqueness permits the shared default license while enforcing one
-// account-bound license for each authenticated user.
-LicenseSchema.index({ ownerId: 1 }, { unique: true, sparse: true });
+// Trial keys are independent. A paid key belongs to one account and one plan,
+// even when that account later upgrades to a different paid plan.
+LicenseSchema.index(
+  { ownerId: 1, sourcePlan: 1 },
+  {
+    name: "one_paid_key_per_account_plan",
+    unique: true,
+    partialFilterExpression: {
+      ownerId: { $type: "string" },
+      sourcePlan: { $in: ["monthly", "lifetime", "aether"] },
+    },
+  },
+);
 LicenseSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 export const License = model<LicenseInterface>("license", LicenseSchema);

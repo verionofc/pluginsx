@@ -14,10 +14,8 @@ import {
   TbShoppingCart,
 } from "react-icons/tb";
 import { useCart } from "@/components/cart/CartProvider";
-import {
-  PendingCheckout,
-  type PendingPurchase,
-} from "@/components/cart/PendingCheckout";
+import { usePurchaseJourney } from "@/components/cart/PurchaseJourneyProvider";
+import { PurchaseProgress } from "@/components/cart/PurchaseProgress";
 import {
   type OfferDetails,
   PlanPromotion,
@@ -27,6 +25,10 @@ import { useHydrated } from "@/hooks/useHydrated";
 import { useLoadingDelay } from "@/hooks/useLoadingDelay";
 import { authClient } from "@/lib/auth-client";
 import { formatBillingInterval } from "@/lib/commercial-display";
+import {
+  type PurchaseProgressData,
+  purchaseUpdatedEvent,
+} from "@/lib/purchase-progress";
 
 type PlanId = "free" | "monthly" | "lifetime" | "aether";
 
@@ -41,7 +43,7 @@ type BillingState = {
     canCancelSubscription?: boolean;
   };
   temporaryLicense?: null | { code: string; expiresAt: string };
-  lastPurchase: PendingPurchase | null;
+  lastPurchase: PurchaseProgressData | null;
   additionalServerSlots?: number;
   upgrade?: { creditCents: number; endsAt: string | null; eligible: boolean };
 };
@@ -149,6 +151,7 @@ const planDetails: Record<
 export function PlansPage() {
   const { data: session, isPending: sessionPending } = authClient.useSession();
   const hasHydrated = useHydrated();
+  const { prepareCheckout, beginCheckout } = usePurchaseJourney();
   const isSessionReady = hasHydrated && !sessionPending;
   const {
     cart,
@@ -157,14 +160,12 @@ export function PlansPage() {
     setPlan,
     setServerSlots,
     setCouponCode,
-    settlePurchase,
   } = useCart();
   const [billingState, setState] = useState<BillingState>();
   const [billingOwner, setBillingOwner] = useState<string>();
   const billingRequest = useRef<AbortController | null>(null);
   const [catalog, setCatalog] = useState<PlanCatalog>();
   const [slotQuantity, setSlotQuantity] = useState(1);
-  const handledPurchaseRef = useRef<string | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<PlanId>("monthly");
   const [loading, setLoading] = useState(true);
   const [initialStateLoaded, setInitialStateLoaded] = useState(false);
@@ -176,7 +177,6 @@ export function PlansPage() {
   const [couponValidatedCode, setCouponValidatedCode] = useState("");
   const [couponBusy, setCouponBusy] = useState(false);
   const [couponMessage, setCouponMessage] = useState("");
-  const [returnStatus, setReturnStatus] = useState<string | null>(null);
   const [returnTo, setReturnTo] = useState<string | null>(null);
   const [temporaryLicense, setTemporaryLicense] = useState<{
     code: string;
@@ -300,119 +300,14 @@ export function PlansPage() {
   }, []);
 
   useEffect(() => {
-    if (!session || typeof window === "undefined") return;
-    const search = new URLSearchParams(window.location.search);
-    setReturnStatus(search.get("return"));
-    setReturnTo(search.get("returnTo"));
-    if (!search.has("return")) return;
-    void refresh();
-  }, [refresh, session]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const search = new URLSearchParams(window.location.search);
-    setReturnStatus(search.get("return"));
-    setReturnTo(search.get("returnTo"));
+    setReturnTo(new URLSearchParams(window.location.search).get("returnTo"));
   }, []);
 
   useEffect(() => {
-    if (!sessionUserId || !cartReady || typeof window === "undefined") return;
-    const reference = new URLSearchParams(window.location.search).get(
-      "purchase",
-    );
-    if (
-      !reference ||
-      !/^[0-9a-f-]{36}$/i.test(reference) ||
-      handledPurchaseRef.current === reference
-    )
-      return;
-    handledPurchaseRef.current = reference;
-    let cancelled = false;
-    let completed = false;
-
-    async function checkPurchase() {
-      let pendingMessage = "";
-      for (let attempt = 0; attempt < 9 && !cancelled; attempt += 1) {
-        try {
-          const response = await fetch(`/billing/purchase/${reference}`, {
-            credentials: "include",
-            cache: "no-store",
-          });
-          if (response.ok) {
-            const purchase = (await response.json()) as {
-              plan: string;
-              serverSlots?: number;
-              status: string;
-              message?: string;
-              upgradeCreditReversed?: boolean;
-            };
-            if (cancelled) return;
-            if (purchase.upgradeCreditReversed) {
-              completed = true;
-              setMessage(
-                purchase.message ??
-                  "O crédito deste upgrade foi estornado. A compra precisa de revisão pelo suporte.",
-              );
-              await refresh();
-              return;
-            }
-            if (purchase.status === "approved") {
-              completed = true;
-              const purchasedSlots = Math.max(
-                0,
-                Number(purchase.serverSlots ?? 0),
-              );
-              settlePurchase(
-                purchase.plan,
-                purchasedSlots,
-                reference as string,
-              );
-              setMessage(
-                purchase.plan === "server_slots"
-                  ? `${purchasedSlots} ${purchasedSlots === 1 ? "vaga extra foi confirmada" : "vagas extras foram confirmadas"} e já estão disponíveis na sua licença.`
-                  : purchase.plan === "monthly"
-                    ? "Cobrança confirmada. Consulte a validade atual da licença na sua conta."
-                    : `Pagamento confirmado${purchasedSlots > 0 ? ` com ${purchasedSlots} ${purchasedSlots === 1 ? "vaga extra" : "vagas extras"}` : ""}. Consulte a licença na sua conta.`,
-              );
-              setReturnStatus("success");
-              await refresh();
-              return;
-            }
-            if (purchase.message) {
-              pendingMessage = purchase.message;
-              setMessage(pendingMessage);
-            }
-            if (
-              ["rejected", "cancelled", "refunded", "charged_back"].includes(
-                purchase.status,
-              )
-            ) {
-              completed = true;
-              setMessage(
-                "A compra não foi aprovada. Os itens continuam no carrinho para você tentar novamente.",
-              );
-              return;
-            }
-          }
-        } catch {
-          // Retry while the payment notification reaches the API.
-        }
-        await new Promise((resolve) => window.setTimeout(resolve, 2_000));
-      }
-      if (!cancelled)
-        setMessage(
-          pendingMessage ||
-            "Pagamento ainda em processamento. Seus itens continuam no carrinho e a página atualizará o acesso após a confirmação.",
-        );
-    }
-
-    void checkPurchase();
-    return () => {
-      cancelled = true;
-      if (!completed && handledPurchaseRef.current === reference)
-        handledPurchaseRef.current = null;
-    };
-  }, [sessionUserId, cartReady, refresh, settlePurchase]);
+    const update = () => void refresh();
+    window.addEventListener(purchaseUpdatedEvent, update);
+    return () => window.removeEventListener(purchaseUpdatedEvent, update);
+  }, [refresh]);
 
   useEffect(() => {
     if (!isSessionReady) return;
@@ -586,6 +481,7 @@ export function PlansPage() {
     setBusy(plan);
     setError("");
     setMessage("");
+    const paymentWindow = prepareCheckout();
     try {
       const response = await fetch("/billing/checkout", {
         method: "POST",
@@ -612,8 +508,14 @@ export function PlansPage() {
         !result.checkoutUrl.startsWith("https://")
       )
         throw new Error("Checkout indisponível.");
-      window.location.assign(result.checkoutUrl);
+      beginCheckout(
+        result.purchaseReference,
+        result.checkoutUrl,
+        paymentWindow,
+      );
+      setBusy("");
     } catch (e) {
+      paymentWindow?.close();
       await refresh();
       setError(
         e instanceof Error ? e.message : "Não foi possível iniciar o checkout.",
@@ -951,11 +853,7 @@ export function PlansPage() {
         </header>
 
         <div className="mx-auto max-w-6xl">
-          <PendingCheckout
-            purchase={state?.lastPurchase}
-            refreshing={loading}
-            onRefresh={() => void refresh()}
-          />
+          <PurchaseProgress />
         </div>
 
         {isSessionReady && session && (
@@ -1003,20 +901,6 @@ export function PlansPage() {
           </section>
         )}
 
-        {returnStatus && (
-          <output
-            aria-live="polite"
-            className="mx-auto mb-4 block w-full max-w-6xl border-l-4 border-[#e3bd59] bg-warning-surface px-4 py-3 text-sm leading-6 text-amber-100"
-          >
-            {returnStatus === "success"
-              ? "Recebemos seu retorno do checkout. A ativação acontece quando o Mercado Pago confirmar o pagamento."
-              : returnStatus === "pending"
-                ? "Pagamento pendente. O acesso será liberado após a confirmação."
-                : returnStatus === "failure"
-                  ? "O pagamento não foi concluído. Confira o estado consultado no servidor e tente novamente."
-                  : "Autorização da assinatura recebida. A primeira cobrança precisa ser confirmada para liberar o acesso."}
-          </output>
-        )}
         {message && (
           <output
             aria-live="polite"

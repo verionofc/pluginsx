@@ -8,6 +8,7 @@ import { Elysia } from "elysia";
 import { node } from "@elysiajs/node";
 import z from "zod";
 import mongoose from "mongoose";
+import { migratePlanLicenseIndexes } from "./http/plugins/paid-plan-license.js";
 import { Coupon } from "./database/models/Coupon.js";
 import { CouponAccountUsage } from "./database/models/CouponAccountUsage.js";
 import { CouponRedemption } from "./database/models/CouponRedemption.js";
@@ -96,7 +97,8 @@ await Promise.all([
   LicenseActivationReceipt.init(),
 ]);
 
-// Create the unique owner index before accepting premium key requests.
+// Migrate legacy account-wide uniqueness before accepting per-plan key requests.
+await migratePlanLicenseIndexes();
 await License.init();
 await LicenseServer.init();
 await PlanAccess.init();

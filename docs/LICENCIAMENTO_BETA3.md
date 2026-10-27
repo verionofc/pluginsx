@@ -26,8 +26,10 @@ revisão aceita, sem alegar sincronização retroativa. O painel mostra os
 resultados persistidos de entrega ao provedor.
 
 Uma conta pode ter Trial e um plano pago. Mensal e vitalício são acessos pagos
-mutuamente exclusivos. O upgrade preserva a licença paga e cancela sua renovação
-mensal antes de conceder o acesso permanente. Se o cancelamento falhar, o
+mutuamente exclusivos. O upgrade preserva o histórico e cancela a renovação
+mensal antes de conceder o acesso permanente. Cada plano possui uma key própria:
+a key mensal anterior fica inativa, e a key vitalícia tem seu próprio card e
+vinculações. O Trial continua independente. Se o cancelamento falhar, o
 pagamento fica registrado e o processamento pode ser retomado pelo webhook,
 sem conceder dois planos pagos.
 

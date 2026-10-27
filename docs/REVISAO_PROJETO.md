@@ -2,8 +2,10 @@
 
 Data: 27/10/2026. Escopo: website Next.js, API Elysia/Mongoose, Better Auth,
 planos, pagamentos e cupons, ativação e privacidade, plugin SpawnerX,
-configuração Gradle, artefatos PaperMC e documentação. Revisão sobre a beta.3
-antes do commit solicitado pelo usuário.
+configuração Gradle, artefatos PaperMC e documentação. A revisão atual cobre
+as alterações desde `10f48a2`, com foco em keys independentes, confirmação de
+compra, estornos e atualização de segurança. O plugin permanece no submódulo
+`4d8c271`, sem alterações nesta entrega.
 
 ## Arquitetura e regras conferidas
 
@@ -14,8 +16,13 @@ antes do commit solicitado pelo usuário.
 - Trial pode coexistir com um plano pago. Mensal e vitalício compartilham um
   acesso pago; crédito de upgrade depende do pagamento real, da assinatura e
   da primeira janela mensal, com reserva única.
+- Cada plano possui sua própria key. Concessão paga e emissão ocorrem na mesma
+  transação; o inventário recupera keys ausentes de acessos pagos anteriores.
+  A key Trial e suas vinculações continuam independentes do plano comprado.
 - O checkout calcula valores no backend. O retorno do navegador não concede
-  acesso; o webhook consulta e valida o recurso no Mercado Pago.
+  acesso; webhook e consulta autenticada de recibo verificam o recurso no
+  Mercado Pago pelo mesmo processador. A interface distingue pagamento recebido
+  de licença efetivamente emitida.
 - Gravações financeiras usam serialização por conta, histórico por pagamento e
   proteção contra notificações atrasadas. Cancelamento de renovação antecede
   a concessão do upgrade.
@@ -32,7 +39,29 @@ antes do commit solicitado pelo usuário.
 - Gradle separa `check` de exportação; os 15 alvos beta.3 mantêm os metadados
   corretos e o histórico de releases anteriores.
 
-## Problemas encontrados e corrigidos nesta revisão
+## Problemas encontrados e corrigidos na revisão atual
+
+| Área | Problema confirmado | Correção |
+| --- | --- | --- |
+| Entrega | Uma compra paga atualizava o acesso, mas não emitia a key; o Trial existente podia esconder a geração manual. | Emissão transacional e idempotente por conta/plano, recuperação no inventário e índice composto, preservando keys e servidores. |
+| Identidade da licença | A resolução pelo plano atual da conta podia fazer uma key antiga representar outro plano. | Validação exige o plano da própria key; upgrade emite a key correspondente e mantém o histórico anterior. |
+| Confirmação Pix | Consulta limitada ao retorno por URL podia acabar antes do pagamento; o cliente continuava na tela do provedor sem atualização do inventário. | Referência persistida por conta, acompanhamento global, retomada por foco e consulta do pagamento real quando falta webhook. |
+| Feedback | Aprovação financeira podia ser exibida antes da emissão da licença. | Recibo separa `paymentStatus` e `fulfillmentStatus`; confirmação temática, atualização do inventário e destaque só após existir key válida. |
+| Estorno | Histórico financeiro já estornado com resumo de compra ainda aprovado podia permitir recuperar ou autorizar a key. | Emissão, validação, ativação e recibo conferem o histórico financeiro; regressão cobre a interrupção entre as gravações. |
+| Mensal | Uma fatura antiga aprovada podia sustentar o vencimento desatualizado de um período posterior estornado. | Validação calcula a cobertura da última fatura ainda aprovada pelas condições aceitas; uma cobrança nova válida restaura o acesso. |
+| Dependências | Auditoria passou a reportar seis avisos no Better Auth 1.6.23 e adaptadores. | API, cliente e adaptador MongoDB alinhados em 1.7.7, com locks atualizados e sessões novamente verificadas. |
+
+As falhas de Magic Link, OAuth Proxy e PostgreSQL reportadas pela auditoria
+dependem de módulos que esta aplicação não configura; a atualização remove os
+avisos da árvore de dependências. A release informa que não exige migração de
+banco: [notas oficiais do Better Auth 1.7.7](https://github.com/better-auth/better-auth/releases/tag/v1.7.7).
+Também foi conferida a compatibilidade com as contas 1.6: o schema instalado
+continua usando `providerId` e `accountId`, conforme a restauração documentada
+na [release 1.7.3](https://github.com/better-auth/better-auth/releases/tag/v1.7.3).
+Esta aplicação não passou pelas versões 1.7.0–1.7.2 nem utiliza os plugins que
+exigem outras migrações de schema.
+
+## Correções da beta.3 já presentes em `10f48a2`
 
 | Área | Problema confirmado | Correção |
 | --- | --- | --- |
@@ -47,20 +76,20 @@ antes do commit solicitado pelo usuário.
 | Configuração | O exemplo de ambiente não apresentava o token opcional de geolocalização nem explicava que o flag Trial virou seed. | `.env.example` documenta as duas condições sem incluir credenciais. |
 
 As proteções de autenticação, autorização por recurso, schemas, índices,
-retenção, migração de Trial e condições legadas foram revisadas. Nenhum outro
-bloqueador confirmado foi identificado no escopo inspecionado.
+retenção, migração de Trial e condições legadas foram conferidas. Os testes
+atuais incluem as regressões dessas correções anteriores.
 
 ## Evidências de validação
 
 | Verificação | Resultado |
 | --- | --- |
-| API: domínio e integração com MongoDB 7 descartável em replica set | 83 testes aprovados |
+| API: domínio e integração com MongoDB 7 descartável em replica set | 93 testes aprovados |
 | API: compilação TypeScript | Aprovada |
-| Website: capacidade, recorrência e recibos | 10 testes aprovados |
+| Website: capacidade, recorrência, recibos e acompanhamento de compra | 15 testes aprovados |
 | Website: lint e TypeScript | Aprovados |
 | Website: build de produção isolado | Aprovado; oito páginas e `/panel` com conteúdo dinâmico protegido |
-| Navegador com API, sessões e banco de testes reais | Aprovado; fluxo completo e regressões da revisão com API e MongoDB reais de teste |
-| SpawnerX: Gradle offline `check exportPlugin` | 19 testes aprovados; 15 JARs verificados |
+| Navegador com API, sessões e banco de testes reais | Trial → checkout em janela própria → Pix sem webhook → key/card Ender Dragon independente; retorno sem URL, recibo único, 320/390 px e movimento reduzido |
+| SpawnerX: Gradle offline `check exportPlugin` | Evidência da revisão anterior: 19 testes e 15 JARs verificados em `4d8c271`; submódulo limpo, sem mudanças nesta entrega |
 | Auditoria API | Nenhuma vulnerabilidade reportada em 118 pacotes |
 | Auditoria website | Nenhuma vulnerabilidade reportada em 187 pacotes |
 | Assinaturas comuns de segredos em textos alterados | Nenhuma ocorrência; valores não foram impressos |
@@ -71,10 +100,13 @@ representam evidência sobre os cenários executados, sem prometer ausência de 
 
 ## Migração e limites comprovados
 
-A migração aditiva foi executada somente no banco local descartável. A base de
-produção e os contratos Mercado Pago reais não foram alterados. Na implantação,
-a API inicializa índices, cria catálogo ausente, preserva snapshots e preenche
-vínculos legados quando existe associação real de titularidade.
+A migração foi executada somente no banco local descartável, incluindo o índice
+`one_paid_key_per_account_plan`: a API normaliza Trials legados, associa keys
+pagas sem plano quando há vínculo real e cria a unicidade por conta/plano antes
+de remover a unicidade antiga por conta. Execução repetida preserva as keys e os
+servidores. A base de produção e os contratos Mercado Pago reais não foram
+alterados. A inicialização também preserva os snapshots comerciais e os seeds
+existentes. Não há nova coleção nem migração destrutiva dos documentos.
 
 Gameplay em PaperMC, callbacks OAuth públicos e pagamentos/cancelamentos reais
 Mercado Pago ainda precisam de validação no ambiente apropriado. Erros ambíguos
@@ -87,4 +119,5 @@ Paper depreciadas e native access do SQLite; não houve falha de build.
 Os serviços e dados de verificação são temporários. A cópia isolada do website
 preserva `.next` e os serviços de desenvolvimento do usuário.
 Veja [arquivos e entrega beta.3](ENTREGA_BETA3.md) e o
-[guia de implantação e validação externa](LICENCIAMENTO_BETA3.md).
+[guia de implantação e validação externa](LICENCIAMENTO_BETA3.md). O fluxo atual
+e seus arquivos estão em [compra e keys independentes](COMPRA_LICENCAS_INDEPENDENTES.md).

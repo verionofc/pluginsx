@@ -857,6 +857,16 @@ describe("licensing beta.3 integration", { skip: !uri }, () => {
           ?.subscriptionCancellationStatus,
         "failed",
       );
+      const pendingReceipt = (await (
+        await request(`/billing/purchase/${reference}`)
+      ).json()) as {
+        paymentStatus: string;
+        fulfillmentStatus: string;
+        licenseRef: unknown;
+      };
+      assert.equal(pendingReceipt.paymentStatus, "approved");
+      assert.equal(pendingReceipt.fulfillmentStatus, "processing");
+      assert.equal(pendingReceipt.licenseRef, null);
       fail = false;
       const completed = await webhook();
       assert.equal(completed.status, 200, await completed.clone().text());
@@ -1991,5 +2001,619 @@ describe("licensing beta.3 integration", { skip: !uri }, () => {
       if (originalToken === undefined) delete process.env.IPINFO_TOKEN;
       else process.env.IPINFO_TOKEN = originalToken;
     }
+  });
+  test("a confirmed paid access repairs its missing independent card even when Trial already exists", async () => {
+    const trialResponse = await request("/billing/trial", "POST", {});
+    assert.equal(trialResponse.status, 200, await trialResponse.clone().text());
+    const trial = (await trialResponse.json()) as { code: string };
+    const config = await configService.getLicensingConfig();
+    await PlanAccess.updateOne(
+      { userId: ownerId },
+      {
+        $set: {
+          plan: "lifetime",
+          status: "active",
+          startsAt: new Date(),
+          expiresAt: null,
+          planTerms: acceptedPlanTerms(
+            config,
+            config.plans.find((p) => p.id === "lifetime")!,
+          ),
+        },
+      },
+    );
+    assert.equal(await License.countDocuments({}), 1);
+    const response = await request("/license/servers");
+    assert.equal(response.status, 200, await response.clone().text());
+    const cards = (await response.json()) as {
+      id: string;
+      plan: string;
+      valid: boolean;
+    }[];
+    assert.equal(cards.length, 2);
+    assert.ok(cards.some((card) => card.plan === "trial" && card.valid));
+    assert.ok(cards.some((card) => card.plan === "lifetime" && card.valid));
+    const paid = cards.find((card) => card.plan === "lifetime")!;
+    const revealed = (await (
+      await request("/license/servers/key", "POST", { licenseRef: paid.id })
+    ).json()) as { key: string };
+    assert.notEqual(revealed.key, trial.code);
+    const { ensurePaidPlanLicense } = await import("./paid-plan-license.js");
+    const repeated = await Promise.all(
+      Array.from({ length: 4 }, () =>
+        ensurePaidPlanLicense(ownerId, "lifetime"),
+      ),
+    );
+    assert.ok(repeated.every((result) => result.code === revealed.key));
+    assert.equal(
+      await License.countDocuments({ ownerId, sourcePlan: "lifetime" }),
+      1,
+    );
+    assert.equal((await License.findById(trial.code))?.sourcePlan, "trial");
+  });
+  test("independent paid-plan keys never inherit another plan's authorization after an upgrade", async () => {
+    await monthlyFixture();
+    const { ensurePaidPlanLicense } = await import("./paid-plan-license.js");
+    const { view } = await import("./license.js");
+    const monthly = await ensurePaidPlanLicense(ownerId, "monthly");
+    const config = await configService.getLicensingConfig();
+    await PlanAccess.updateOne(
+      { userId: ownerId },
+      {
+        $set: {
+          plan: "lifetime",
+          status: "active",
+          expiresAt: null,
+          planTerms: acceptedPlanTerms(
+            config,
+            config.plans.find((p) => p.id === "lifetime")!,
+          ),
+        },
+        $unset: { mercadoPagoSubscriptionId: "" },
+      },
+    );
+    const lifetime = await ensurePaidPlanLicense(ownerId, "lifetime");
+    assert.notEqual(monthly.code, lifetime.code);
+    assert.equal((await License.findById(monthly.code))?.sourcePlan, "monthly");
+    assert.equal((await view(monthly.code)).valid, false);
+    assert.equal((await view(lifetime.code)).valid, true);
+    await assert.rejects(
+      service.licenseEntitlement(monthly.code, config),
+      (error) => (error as { code: string }).code === "INACTIVE_LICENSE",
+    );
+    const cards = (await (await request("/license/servers")).json()) as {
+      plan: string;
+      valid: boolean;
+    }[];
+    assert.ok(cards.some((card) => card.plan === "monthly" && !card.valid));
+    assert.ok(cards.some((card) => card.plan === "lifetime" && card.valid));
+    await assert.rejects(ensurePaidPlanLicense(ownerId, "aether"));
+    assert.equal(await License.countDocuments({ ownerId }), 2);
+  });
+  test("plan-key index migration preserves a legacy owned Trial and its server while allowing a separate paid key", async () => {
+    const { migratePlanLicenseIndexes, ensurePaidPlanLicense } = await import(
+      "./paid-plan-license.js"
+    );
+    await License.collection.createIndex(
+      { ownerId: 1 },
+      { name: "legacy_one_key_per_owner", unique: true, sparse: true },
+    );
+    const key = `plus_${randomUUID()}`,
+      serverRecord = randomUUID();
+    const expiry = new Date(Date.now() + 3600000);
+    await License.create({
+      _id: key,
+      ownerId,
+      sourcePlan: "lifetime",
+      expiresAt: expiry,
+      value: { tier: "plus", valid: true },
+    });
+    await LicenseServer.create({
+      _id: serverRecord,
+      licenseId: key,
+      ownerId,
+      serverId: randomUUID(),
+      name: "Preserved Trial world",
+      minecraftVersion: "1.21.1",
+      implementation: "Paper",
+      implementationVersion: "Paper",
+      pluginVersion: "1.0.0-beta.3",
+      state: "ACTIVE",
+      createdAt: new Date(),
+      expiresAt: expiry,
+    });
+    const config = await configService.getLicensingConfig();
+    await PlanAccess.create({
+      userId: ownerId,
+      plan: "lifetime",
+      status: "active",
+      startsAt: new Date(),
+      planTerms: acceptedPlanTerms(
+        config,
+        config.plans.find((p) => p.id === "lifetime")!,
+      ),
+    });
+    await migratePlanLicenseIndexes();
+    await migratePlanLicenseIndexes();
+    assert.equal((await License.findById(key))?.sourcePlan, "trial");
+    assert.equal(
+      (await License.findById(key))?.expiresAt?.getTime(),
+      expiry.getTime(),
+    );
+    assert.equal((await LicenseServer.findById(serverRecord))?.licenseId, key);
+    const paid = await ensurePaidPlanLicense(ownerId, "lifetime");
+    assert.notEqual(paid.code, key);
+    assert.equal(await License.countDocuments({ ownerId }), 2);
+    const indexes = await License.collection.indexes();
+    assert.ok(
+      !indexes.some(
+        (index) =>
+          index.unique &&
+          Object.keys(index.key).length === 1 &&
+          index.key.ownerId === 1,
+      ),
+    );
+    assert.ok(
+      indexes.some(
+        (index) =>
+          index.name === "one_paid_key_per_account_plan" && index.unique,
+      ),
+    );
+  });
+  async function paidOrder(plan: "lifetime" | "monthly" = "lifetime") {
+    const config = await configService.getLicensingConfig();
+    return PlanPurchase.create({
+      userId: ownerId,
+      plan,
+      amount: plan === "monthly" ? 11.9 : 59.9,
+      currency: "BRL",
+      externalReference: randomUUID(),
+      status: "pending",
+      entitlementCheckoutReserved: true,
+      planTerms: acceptedPlanTerms(
+        config,
+        config.plans.find((p) => p.id === plan)!,
+      ),
+    });
+  }
+  async function paymentNotification(id: string) {
+    const ts = String(Math.floor(Date.now() / 1000)),
+      requestId = randomUUID();
+    const signature = createHmac(
+      "sha256",
+      process.env.MERCADOPAGO_WEBHOOK_SECRET!,
+    )
+      .update(`id:${id};request-id:${requestId};ts:${ts};`)
+      .digest("hex");
+    return app.handle(
+      new Request(`http://localhost:3000/billing/webhook?data.id=${id}`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-request-id": requestId,
+          "x-signature": `ts=${ts},v1=${signature}`,
+        },
+        body: JSON.stringify({
+          id: randomUUID(),
+          type: "payment",
+          data: { id },
+        }),
+      }),
+    );
+  }
+  test("Trial then paid Ender Dragon webhook immediately issues a distinct ready key and both cards", async () => {
+    const trial = (await (
+      await request("/billing/trial", "POST", {})
+    ).json()) as { code: string };
+    const expiry = (await License.findById(trial.code))?.expiresAt?.getTime();
+    const order = await paidOrder();
+    const { Payment } = await import("mercadopago");
+    const original = Payment.prototype.get;
+    const id = randomUUID();
+    Payment.prototype.get = async () =>
+      ({
+        id,
+        external_reference: order.externalReference,
+        transaction_amount: 59.9,
+        currency_id: "BRL",
+        status: "approved",
+        date_approved: new Date().toISOString(),
+      }) as unknown as Awaited<ReturnType<typeof original>>;
+    try {
+      const notified = await paymentNotification(id);
+      assert.equal(notified.status, 200, await notified.clone().text());
+      const receipt = (await (
+        await request(`/billing/purchase/${order.externalReference}`)
+      ).json()) as {
+        fulfillmentStatus: string;
+        licenseRef: string;
+        paymentStatus: string;
+      };
+      assert.equal(receipt.paymentStatus, "approved");
+      assert.equal(receipt.fulfillmentStatus, "ready");
+      assert.match(receipt.licenseRef, /^[a-f0-9]{64}$/);
+      const cards = (await (await request("/license/servers")).json()) as {
+        plan: string;
+        id: string;
+        valid: boolean;
+      }[];
+      assert.equal(cards.length, 2);
+      assert.ok(cards.some((card) => card.plan === "trial" && card.valid));
+      assert.ok(
+        cards.some(
+          (card) =>
+            card.plan === "lifetime" &&
+            card.id === receipt.licenseRef &&
+            card.valid,
+        ),
+      );
+      const key = (await (
+        await request("/license/servers/key", "POST", {
+          licenseRef: receipt.licenseRef,
+        })
+      ).json()) as { key: string };
+      assert.notEqual(key.key, trial.code);
+      assert.equal(
+        (await License.findById(trial.code))?.expiresAt?.getTime(),
+        expiry,
+      );
+      assert.equal(await License.countDocuments({}), 2);
+    } finally {
+      Payment.prototype.get = original;
+    }
+  });
+  test("owned receipt recovers a paid Pix without a webhook and repeated checks issue one independent key", async () => {
+    await request("/billing/trial", "POST", {});
+    const order = await paidOrder();
+    const { Payment } = await import("mercadopago");
+    const search = Payment.prototype.search,
+      get = Payment.prototype.get;
+    let searches = 0,
+      gets = 0;
+    const id = randomUUID();
+    Payment.prototype.search = async (input) => {
+      searches++;
+      assert.equal(input?.options?.external_reference, order.externalReference);
+      return { results: [{ id, status: "approved" }] } as Awaited<
+        ReturnType<typeof search>
+      >;
+    };
+    Payment.prototype.get = async () => {
+      gets++;
+      return {
+        id,
+        external_reference: order.externalReference,
+        transaction_amount: 59.9,
+        currency_id: "BRL",
+        status: "approved",
+        date_approved: new Date().toISOString(),
+      } as unknown as Awaited<ReturnType<typeof get>>;
+    };
+    try {
+      const forbidden = await request(
+        `/billing/purchase/${order.externalReference}`,
+        "GET",
+        undefined,
+        userCookie,
+      );
+      assert.equal(forbidden.status, 404);
+      assert.equal(searches, 0);
+      await Promise.all([
+        request(`/billing/purchase/${order.externalReference}`),
+        request(`/billing/purchase/${order.externalReference}`),
+      ]);
+      const receipt = (await (
+        await request(`/billing/purchase/${order.externalReference}`)
+      ).json()) as { fulfillmentStatus: string; licenseRef: string };
+      assert.equal(receipt.fulfillmentStatus, "ready");
+      assert.match(receipt.licenseRef, /^[a-f0-9]{64}$/);
+      assert.equal(searches, 1);
+      assert.equal(gets, 1);
+      assert.equal(
+        await License.countDocuments({ ownerId, sourcePlan: "lifetime" }),
+        1,
+      );
+      assert.equal(await License.countDocuments({ sourcePlan: "trial" }), 1);
+      const state = (await (await request("/billing/state")).json()) as {
+        lastPurchase: { fulfillmentStatus: string; licenseRef: string };
+      };
+      assert.equal(state.lastPurchase.licenseRef, receipt.licenseRef);
+      assert.equal(state.lastPurchase.fulfillmentStatus, "ready");
+    } finally {
+      Payment.prototype.search = search;
+      Payment.prototype.get = get;
+    }
+  });
+  test("mismatched provider references, amounts and currencies never grant a paid key", async () => {
+    await request("/billing/trial", "POST", {});
+    const order = await paidOrder();
+    const { Payment } = await import("mercadopago");
+    const search = Payment.prototype.search,
+      get = Payment.prototype.get;
+    const id = randomUUID();
+    Payment.prototype.search = async () =>
+      ({ results: [{ id, status: "approved" }] }) as Awaited<
+        ReturnType<typeof search>
+      >;
+    try {
+      for (const mismatch of [
+        { external_reference: randomUUID() },
+        { transaction_amount: 0.01 },
+        { currency_id: "USD" },
+      ]) {
+        Payment.prototype.get = async () =>
+          ({
+            id,
+            external_reference: order.externalReference,
+            transaction_amount: 59.9,
+            currency_id: "BRL",
+            status: "approved",
+            ...mismatch,
+          }) as unknown as Awaited<ReturnType<typeof get>>;
+        await PlanPurchase.updateOne(
+          { _id: order._id },
+          { $unset: { lastProviderCheckAt: "", providerCheckLeaseUntil: "" } },
+        );
+        const receipt = (await (
+          await request(`/billing/purchase/${order.externalReference}`)
+        ).json()) as { fulfillmentStatus: string; licenseRef: unknown };
+        assert.equal(receipt.fulfillmentStatus, "pending");
+        assert.equal(receipt.licenseRef, null);
+        assert.equal(
+          await License.countDocuments({ ownerId, sourcePlan: "lifetime" }),
+          0,
+        );
+      }
+      assert.equal(await License.countDocuments({}), 1);
+    } finally {
+      Payment.prototype.search = search;
+      Payment.prototype.get = get;
+    }
+  });
+  test("provider failure and forged return parameters keep the order unconfirmed and throttle retries", async () => {
+    await request("/billing/trial", "POST", {});
+    const order = await paidOrder();
+    const { Payment } = await import("mercadopago");
+    const original = Payment.prototype.search;
+    let calls = 0;
+    Payment.prototype.search = async () => {
+      calls++;
+      throw new Error("Fixture provider timeout");
+    };
+    try {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const response = await request(
+          `/billing/purchase/${order.externalReference}?status=approved&collection_status=approved&payment_id=forged`,
+        );
+        assert.equal(response.status, 200);
+        const body = (await response.json()) as {
+          fulfillmentStatus: string;
+          paymentStatus: string;
+        };
+        assert.equal(body.fulfillmentStatus, "pending");
+        assert.equal(body.paymentStatus, "pending");
+      }
+      assert.equal(calls, 1);
+      assert.equal(
+        await License.countDocuments({ ownerId, sourcePlan: "lifetime" }),
+        0,
+      );
+    } finally {
+      Payment.prototype.search = original;
+    }
+  });
+  test("payment approval with interrupted key issuance stays processing and repairs without another payment", async () => {
+    await request("/billing/trial", "POST", {});
+    const order = await paidOrder();
+    const { Payment } = await import("mercadopago");
+    const get = Payment.prototype.get,
+      insert = License.collection.insertOne;
+    const id = randomUUID();
+    Payment.prototype.get = async () =>
+      ({
+        id,
+        external_reference: order.externalReference,
+        transaction_amount: 59.9,
+        currency_id: "BRL",
+        status: "approved",
+        date_approved: new Date().toISOString(),
+      }) as unknown as Awaited<ReturnType<typeof get>>;
+    License.collection.insertOne = async function (document, options) {
+      if (document.sourcePlan === "lifetime")
+        throw new Error("Fixture license write interrupted");
+      return insert.call(this, document, options);
+    };
+    try {
+      assert.equal((await paymentNotification(id)).status, 503);
+      const processing = (await (
+        await request(`/billing/purchase/${order.externalReference}`)
+      ).json()) as {
+        paymentStatus: string;
+        fulfillmentStatus: string;
+        licenseRef: unknown;
+      };
+      assert.equal(processing.paymentStatus, "approved");
+      assert.equal(processing.fulfillmentStatus, "processing");
+      assert.equal(processing.licenseRef, null);
+      assert.equal(await License.countDocuments({}), 1);
+      License.collection.insertOne = insert;
+      await PlanPurchase.updateOne(
+        { _id: order._id },
+        { $unset: { lastProviderCheckAt: "", providerCheckLeaseUntil: "" } },
+      );
+      const recovered = (await (
+        await request(`/billing/purchase/${order.externalReference}`)
+      ).json()) as { fulfillmentStatus: string };
+      assert.equal(recovered.fulfillmentStatus, "ready");
+      assert.equal(
+        await License.countDocuments({ ownerId, sourcePlan: "lifetime" }),
+        1,
+      );
+      assert.equal(await License.countDocuments({}), 2);
+    } finally {
+      License.collection.insertOne = insert;
+      Payment.prototype.get = get;
+    }
+  });
+  test("an expired older invoice cannot fund a monthly period whose payment was reversed", async () => {
+    const config = await configService.getLicensingConfig(),
+      reference = randomUUID();
+    const terms = acceptedPlanTerms(
+      config,
+      config.plans.find((plan) => plan.id === "monthly")!,
+    );
+    await PlanPurchase.create({
+      userId: ownerId,
+      plan: "monthly",
+      amount: 11.9,
+      currency: "BRL",
+      externalReference: reference,
+      status: "approved",
+      fulfilledAt: new Date(),
+      planTerms: terms,
+    });
+    await PlanAccess.create({
+      userId: ownerId,
+      plan: "monthly",
+      status: "active",
+      purchaseReference: reference,
+      planTerms: terms,
+      expiresAt: new Date(Date.now() + 86400000),
+    });
+    await BillingTransaction.create([
+      {
+        userId: ownerId,
+        purchaseReference: reference,
+        providerPaymentId: randomUUID(),
+        plan: "monthly",
+        amount: 11.9,
+        currency: "BRL",
+        status: "approved",
+        paidAt: new Date(Date.now() - 400 * 86400000),
+      },
+      {
+        userId: ownerId,
+        purchaseReference: reference,
+        providerPaymentId: randomUUID(),
+        plan: "monthly",
+        amount: 11.9,
+        currency: "BRL",
+        status: "refunded",
+        paidAt: new Date(),
+      },
+    ]);
+    const { ensurePaidPlanLicense } = await import("./paid-plan-license.js"),
+      { hasPremiumAccess } = await import("./plan-access.js");
+    assert.equal(await hasPremiumAccess(ownerId), false);
+    await assert.rejects(
+      ensurePaidPlanLicense(ownerId, "monthly"),
+      (error) => (error as { code: string }).code === "PLAN_REQUIRED",
+    );
+    const receipt = (await (
+      await request(`/billing/purchase/${reference}`)
+    ).json()) as { fulfillmentStatus: string; licenseRef: unknown };
+    assert.equal(receipt.fulfillmentStatus, "revoked");
+    assert.equal(receipt.licenseRef, null);
+    assert.equal(await License.countDocuments({ ownerId }), 0);
+    await BillingTransaction.create({
+      userId: ownerId,
+      purchaseReference: reference,
+      providerPaymentId: randomUUID(),
+      plan: "monthly",
+      amount: 11.9,
+      currency: "BRL",
+      status: "approved",
+      paidAt: new Date(),
+    });
+    assert.equal(await hasPremiumAccess(ownerId), true);
+    assert.ok(
+      (await ensurePaidPlanLicense(ownerId, "monthly")).code.startsWith(
+        "plus_",
+      ),
+    );
+  });
+  test("a recorded reversal blocks stale approved receipts, missing-key recovery and existing-key authorization", async () => {
+    const config = await configService.getLicensingConfig(),
+      reference = randomUUID(),
+      paymentId = randomUUID();
+    await PlanPurchase.create({
+      userId: ownerId,
+      plan: "lifetime",
+      amount: 59.9,
+      currency: "BRL",
+      externalReference: reference,
+      status: "approved",
+    });
+    await PlanAccess.create({
+      userId: ownerId,
+      plan: "lifetime",
+      status: "active",
+      purchaseReference: reference,
+      planTerms: acceptedPlanTerms(
+        config,
+        config.plans.find((plan) => plan.id === "lifetime")!,
+      ),
+    });
+    await BillingTransaction.create({
+      userId: ownerId,
+      purchaseReference: reference,
+      providerPaymentId: paymentId,
+      plan: "lifetime",
+      amount: 59.9,
+      currency: "BRL",
+      status: "refunded",
+      paidAt: new Date(),
+    });
+    const receipt = (await (
+      await request(`/billing/purchase/${reference}`)
+    ).json()) as {
+      paymentStatus: string;
+      fulfillmentStatus: string;
+      licenseRef: unknown;
+    };
+    assert.equal(receipt.paymentStatus, "refunded");
+    assert.equal(receipt.fulfillmentStatus, "revoked");
+    assert.equal(receipt.licenseRef, null);
+    const { ensurePaidPlanLicense } = await import("./paid-plan-license.js");
+    await assert.rejects(
+      ensurePaidPlanLicense(ownerId, "lifetime"),
+      (error) => (error as { code: string }).code === "PLAN_REQUIRED",
+    );
+    assert.deepEqual(await (await request("/license/servers")).json(), []);
+    assert.equal(await License.countDocuments({ ownerId }), 0);
+    const key = `plus_${randomUUID()}`;
+    await License.create({
+      _id: key,
+      ownerId,
+      sourcePlan: "lifetime",
+      value: { tier: "plus", valid: true },
+    });
+    const { view } = await import("./license.js"),
+      { hasPremiumAccess } = await import("./plan-access.js");
+    assert.equal((await view(key)).valid, false);
+    assert.equal(await hasPremiumAccess(ownerId), false);
+    await assert.rejects(
+      service.licenseEntitlement(key, config),
+      (error) => (error as { code: string }).code === "INACTIVE_LICENSE",
+    );
+    const state = (await (await request("/billing/state")).json()) as {
+      access: { status: string };
+    };
+    assert.equal(state.access.status, "revoked");
+    // A different, still-approved attempt pays the same order; the refunded
+    // attempt alone must not revoke that independent payment's access.
+    await BillingTransaction.create({
+      userId: ownerId,
+      purchaseReference: reference,
+      providerPaymentId: randomUUID(),
+      plan: "lifetime",
+      amount: 59.9,
+      currency: "BRL",
+      status: "approved",
+      paidAt: new Date(),
+    });
+    assert.equal((await view(key)).valid, true);
+    assert.equal(await hasPremiumAccess(ownerId), true);
+    assert.equal((await ensurePaidPlanLicense(ownerId, "lifetime")).code, key);
   });
 });

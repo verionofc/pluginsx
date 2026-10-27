@@ -87,9 +87,11 @@ POST /license/premium/generate
 ```
 
 Envie o cookie de sessão. O endpoint retorna uma key `plus_...`; chamadas
-repetidas recuperam a mesma key. Um índice único no MongoDB por usuário mantém
-essa regra mesmo quando duas solicitações chegam ao mesmo tempo. Sem sessão, a
-API responde `401`.
+repetidas recuperam a mesma key do plano ativo. O índice único por conta e plano
+no MongoDB mantém essa regra em solicitações concorrentes. Trial e cada plano
+pago possuem keys independentes; a licença paga é emitida automaticamente na
+concessão e o inventário recupera keys ausentes de acessos já confirmados.
+Sem sessão, a API responde `401`.
 
 O SpawnerX beta.3 mantém a consulta `/license/tier` para a licença base
 `default`. Licenças Plus usam o protocolo de instalação assinado descrito abaixo;
@@ -166,7 +168,7 @@ POST /billing/coupon/validate        # requer sessão; { plan, serverSlots, coup
 POST /billing/checkout              # requer sessão; { plan, serverSlots?, couponCode?, returnTo?, expectedTotalCents? }
 POST /billing/cancel                # requer sessão; cancela a renovação mensal
 POST /billing/webhook               # validação de assinatura do Mercado Pago
-GET  /billing/purchase/{reference}  # requer sessão e propriedade da compra
+GET  /billing/purchase/{reference}  # sessão/propriedade; reconciliação e estado de pagamento + emissão
 ```
 
 ## Painel do proprietário
@@ -287,3 +289,7 @@ Essa opção limpa as coleções usadas pelas fixtures entre cenários, incluind
 dados de sessão, licenciamento e cobrança. Rejeita URLs remotas ou outros nomes
 de banco. Nunca aponte a suíte para uma base utilizada por outro serviço. Sem a variável, os testes de integração são
 omitidos e os testes de domínio continuam executando normalmente.
+
+A confirmação usa `paymentStatus` e `fulfillmentStatus` separados. O website só
+anuncia a aquisição após `ready` e a presença da referência da licença. Veja
+[compra e keys independentes](../docs/COMPRA_LICENCAS_INDEPENDENTES.md).

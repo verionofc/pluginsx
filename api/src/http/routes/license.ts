@@ -3,7 +3,11 @@ import { z } from "zod";
 
 import { License } from "../../database/models/License.js";
 import { authSessionPlugin } from "../plugins/better-auth.js";
-import { getPaidPlan, hasPremiumAccess, hasTrustedWebOrigin } from "../plugins/plan-access.js";
+import {
+  getPaidPlan,
+  hasPremiumAccess,
+  hasTrustedWebOrigin,
+} from "../plugins/plan-access.js";
 import {
   generate as generateLicense,
   generatePremiumForAccount,
@@ -31,7 +35,9 @@ const generatedDefaultLicenseSchema = defaultLicenseSchema.extend({
 const hasExpectedCodePrefix = (code: string) =>
   code.startsWith(DEFAULT_CODE_PREFIX);
 
-const resolveTierFromValue = (value: LicenseView["value"]): LicenseTier | undefined => {
+const resolveTierFromValue = (
+  value: LicenseView["value"],
+): LicenseTier | undefined => {
   if (!value || typeof value !== "object") return undefined;
 
   const rawTier = (value as { tier?: unknown }).tier;
@@ -105,15 +111,21 @@ export const licenseRoutes = new Elysia({ prefix: "/license" })
   .get(
     "/premium",
     async ({ user }) => {
+      const paidPlan = await getPaidPlan(user.id);
+      if (!paidPlan) return { code: null, tier: "plus" as const, valid: false };
+      await generatePremiumForAccount(user.id, paidPlan);
       const license = await License.findOne({
         ownerId: user.id,
+        sourcePlan: paidPlan,
+        expiresAt: null,
         "value.tier": "plus",
       }).lean();
 
       if (!license) return { code: null, tier: "plus" as const, valid: false };
 
       const view = await viewLicense(license._id);
-      if (!view.valid || !(await hasPremiumAccess(user.id))) return { code: null, tier: "plus" as const, valid: false };
+      if (!view.valid || !(await hasPremiumAccess(user.id)))
+        return { code: null, tier: "plus" as const, valid: false };
       return {
         code: view.valid ? license._id : null,
         tier: "plus" as const,
@@ -127,7 +139,11 @@ export const licenseRoutes = new Elysia({ prefix: "/license" })
         tags: ["License"],
       },
       response: {
-        200: z.object({ code: z.string().nullable(), tier: z.literal("plus"), valid: z.boolean() }),
+        200: z.object({
+          code: z.string().nullable(),
+          tier: z.literal("plus"),
+          valid: z.boolean(),
+        }),
         401: z.object({ code: z.string(), message: z.string() }),
       },
     },
@@ -158,9 +174,18 @@ export const licenseRoutes = new Elysia({ prefix: "/license" })
   .post(
     "/premium/generate",
     async ({ user, status, request }) => {
-      if (!hasTrustedWebOrigin(request)) return status(403, { code: "ORIGIN_FORBIDDEN", message: "Origem da solicitação não permitida." });
+      if (!hasTrustedWebOrigin(request))
+        return status(403, {
+          code: "ORIGIN_FORBIDDEN",
+          message: "Origem da solicitação não permitida.",
+        });
       const paidPlan = await getPaidPlan(user.id);
-      if (!paidPlan) return status(403, { code: "PLAN_REQUIRED", message: "Contrate um plano Premium para gerar uma key Plus.", redirectTo: "/plans?returnTo=%2F#license" });
+      if (!paidPlan)
+        return status(403, {
+          code: "PLAN_REQUIRED",
+          message: "Contrate um plano Premium para gerar uma key Plus.",
+          redirectTo: "/plans?returnTo=%2F#license",
+        });
       const generated = await generatePremiumForAccount(user.id, paidPlan);
       const licenseView = await viewLicense(generated.code);
 
@@ -174,7 +199,8 @@ export const licenseRoutes = new Elysia({ prefix: "/license" })
     {
       auth: true,
       detail: {
-        summary: "Generate or retrieve the authenticated user's premium license",
+        summary:
+          "Generate or retrieve the authenticated user's premium license",
         tags: ["License"],
       },
       response: {
@@ -185,7 +211,11 @@ export const licenseRoutes = new Elysia({ prefix: "/license" })
           created: z.boolean(),
         }),
         401: z.object({ code: z.string(), message: z.string() }),
-        403: z.object({ code: z.string(), message: z.string(), redirectTo: z.string().optional() }),
+        403: z.object({
+          code: z.string(),
+          message: z.string(),
+          redirectTo: z.string().optional(),
+        }),
       },
     },
   )

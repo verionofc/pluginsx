@@ -15,14 +15,14 @@
     "url": "https://github.com/yeyTaken"
   },
   "dependencies": {
-    "@better-auth/mongo-adapter": "^1.6.23",
+    "@better-auth/mongo-adapter": "1.7.7",
     "@elysia/node": "^1.4.6",
     "@elysiajs/cors": "^1.4.1",
     "@elysiajs/node": "^1.4.5",
     "@elysiajs/openapi": "^1.4.13",
     "argon2": "^0.44.0",
     "axios": "^1.20.0",
-    "better-auth": "^1.4.12",
+    "better-auth": "1.7.7",
     "chalk": "^5.6.2",
     "elysia": "latest",
     "mercadopago": "^3.6.1",

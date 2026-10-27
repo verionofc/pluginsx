@@ -22,6 +22,8 @@ import { PlanPurchase } from "../../database/models/PlanPurchase.js";
 import { authSessionPlugin } from "../plugins/better-auth.js";
 import { getServerLimitForPlan } from "../plugins/billing-config.js";
 import { view } from "../plugins/license.js";
+import { ensurePaidPlanLicense } from "../plugins/paid-plan-license.js";
+import { BillingConflict } from "../plugins/billing-lock.js";
 import { getPaidPlan, hasTrustedWebOrigin } from "../plugins/plan-access.js";
 import { getMonthlyBilling } from "../plugins/monthly-billing.js";
 import {
@@ -42,7 +44,7 @@ const planForLicense = async (license: {
   const activePlan = license.ownerId
     ? await getPaidPlan(license.ownerId)
     : null;
-  return activePlan ?? license.sourcePlan ?? null;
+  return license.sourcePlan ?? activePlan ?? null;
 };
 
 const serverLimitForPlan = getServerLimitForPlan;
@@ -78,6 +80,7 @@ const serverLimitForLicense = async (
     return baseLimit;
   const activeAccess = await PlanAccess.findOne({
     userId: license.ownerId,
+    plan: resolvedPlan,
     status: "active",
     $or: [
       { plan: { $in: ["lifetime", "aether"] } },
@@ -396,6 +399,21 @@ export const licenseServerRoutes = new Elysia({ prefix: "/license" })
       set.headers["cache-control"] = "no-store, private";
       const config = await getLicensingConfig();
       const now = new Date();
+      const paidPlan = await getPaidPlan(user.id);
+      if (paidPlan) {
+        try {
+          await ensurePaidPlanLicense(user.id, paidPlan);
+        } catch (error) {
+          // A refund/revocation can win between reading access and repairing
+          // its missing key. Never manufacture access to make inventory load.
+          if (
+            !(
+              error instanceof BillingConflict && error.code === "PLAN_REQUIRED"
+            )
+          )
+            throw error;
+        }
+      }
       const trialAccess = await PlanAccess.findOne({
         userId: user.id,
         trialLicenseCode: { $exists: true },
@@ -451,8 +469,8 @@ export const licenseServerRoutes = new Elysia({ prefix: "/license" })
           const access = license.ownerId
             ? await PlanAccess.findOne({ userId: license.ownerId }).lean()
             : null;
-          const terms =
-            plan === "trial" ? license.planTerms : access?.planTerms;
+          const matchingAccess = access?.plan === plan ? access : null;
+          const terms = license.planTerms ?? matchingAccess?.planTerms;
           return {
             planName: terms?.name ?? null,
             id: accountLicenseRef(license._id),
@@ -460,7 +478,9 @@ export const licenseServerRoutes = new Elysia({ prefix: "/license" })
             valid: (await view(license._id)).valid,
             plan,
             terms: terms ?? null,
-            expiresAt: license.expiresAt ?? null,
+            expiresAt:
+              license.expiresAt ??
+              (plan === "monthly" ? (matchingAccess?.expiresAt ?? null) : null),
             billing: plan === "monthly" ? billing : null,
             used: currentLicense?.serverSlots ?? 0,
             limit:
@@ -560,10 +580,12 @@ export const licenseServerRoutes = new Elysia({ prefix: "/license" })
             }
           : { ownerId: user.id },
       )
-        .select({ _id: 1 })
+        .select({ _id: 1, sourcePlan: 1, expiresAt: 1 })
         .lean();
       const license = licenses.find(
-        (item) => accountLicenseRef(item._id) === licenseRef,
+        (item) =>
+          accountLicenseRef(item._id) === licenseRef &&
+          !(item.expiresAt && item.expiresAt <= now),
       );
       if (!license) return status(404, { message: "License not found" });
       set.headers["cache-control"] = "no-store, private";
@@ -649,8 +671,10 @@ export const licenseServerRoutes = new Elysia({ prefix: "/license" })
         const access = license?.ownerId
           ? await PlanAccess.findOne({ userId: license.ownerId }).lean()
           : null;
+        const matchingAccess = access?.plan === plan ? access : null;
         const terms =
-          (plan === "trial" ? license?.planTerms : access?.planTerms) ??
+          license?.planTerms ??
+          matchingAccess?.planTerms ??
           record.licenseTerms;
         const events = await LicenseServerEvent.find({
           serverRecordId: record._id,
@@ -679,10 +703,12 @@ export const licenseServerRoutes = new Elysia({ prefix: "/license" })
             plan,
             valid: license ? (await view(license._id)).valid : false,
             acquiredAt:
-              access?.startsAt ?? license?.createdAt ?? record.createdAt,
+              matchingAccess?.startsAt ??
+              license?.createdAt ??
+              record.createdAt,
             expiresAt:
               plan === "monthly"
-                ? (access?.expiresAt ?? null)
+                ? (matchingAccess?.expiresAt ?? record.licenseExpiresAt ?? null)
                 : (license?.expiresAt ?? record.licenseExpiresAt ?? null),
             limit: license ? await serverLimitForLicense(license, plan) : 0,
             used: license?.serverSlots ?? 0,

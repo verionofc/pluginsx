@@ -66,3 +66,11 @@ OAuth público, pagamentos no provedor e operação do plugin em PaperMC real
 exigem validação externa. Consulte o
 [guia beta.3](../docs/LICENCIAMENTO_BETA3.md) para migração, protocolo,
 privacidade e cenários de aceite.
+
+A confirmação da compra acompanha `paymentStatus` e `fulfillmentStatus` do
+backend. O checkout pode abrir em uma janela própria mantendo o acompanhamento
+no site; em bloqueio de popups, a referência fica salva antes do redirecionamento.
+Ao retornar, inclusive sem parâmetros na URL, o pedido é recuperado por conta.
+O recibo com a arte do plano e a animação de conquista aparece uma única vez
+após a key estar pronta. O inventário atualiza e destaca o card correspondente,
+respeitando movimento reduzido. Veja o [fluxo completo](../docs/COMPRA_LICENCAS_INDEPENDENTES.md).

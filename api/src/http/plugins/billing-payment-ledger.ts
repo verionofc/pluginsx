@@ -1,8 +1,41 @@
 import type { ClientSession } from "mongoose";
-import { BillingTransaction } from "../../database/models/BillingTransaction.js";
+import {
+  BillingTransaction,
+  type BillingTransactionStatus,
+} from "../../database/models/BillingTransaction.js";
 
 const terminalStatuses = ["refunded", "charged_back"];
 const unpaidStatuses = ["pending", "rejected", "cancelled"];
+
+/** Recorded reversals take precedence over an interrupted order summary update. */
+export async function recordedPurchaseStatus(
+  userId: string,
+  reference: string,
+  fallback: BillingTransactionStatus,
+  session?: ClientSession,
+): Promise<BillingTransactionStatus> {
+  const [state] = await BillingTransaction.aggregate<{
+    approved: number;
+    chargedBack: number;
+    refunded: number;
+  }>([
+    { $match: { userId, purchaseReference: reference } },
+    {
+      $group: {
+        _id: null,
+        approved: { $max: { $cond: [{ $eq: ["$status", "approved"] }, 1, 0] } },
+        chargedBack: {
+          $max: { $cond: [{ $eq: ["$status", "charged_back"] }, 1, 0] },
+        },
+        refunded: { $max: { $cond: [{ $eq: ["$status", "refunded"] }, 1, 0] } },
+      },
+    },
+  ]).session(session ?? null);
+  if (state?.approved) return "approved";
+  if (state?.chargedBack) return "charged_back";
+  if (state?.refunded) return "refunded";
+  return fallback;
+}
 
 /** A delayed notification cannot undo a recorded reversal or an approved charge. */
 export async function recordPaymentAttempt(

@@ -3,6 +3,7 @@ import localFont from "next/font/local";
 
 import "@/styles/globals.css";
 import { CartProvider } from "@/components/cart/CartProvider";
+import { PurchaseJourneyProvider } from "@/components/cart/PurchaseJourneyProvider";
 import { AccountNav } from "@/components/ui/AccountNav";
 import { MiniFooter } from "@/components/ui/MiniFooter";
 import { SiteBackground } from "@/components/ui/SiteBackground";
@@ -90,11 +91,13 @@ export default function RootLayout({
       <body className="antialiased relative isolate flex min-h-screen w-full flex-col overflow-x-hidden">
         <SiteBackground />
         <CartProvider>
-          <DefaultProviders>
-            {children}
-            <MiniFooter />
-          </DefaultProviders>
-          <AccountNav />
+          <PurchaseJourneyProvider>
+            <DefaultProviders>
+              {children}
+              <MiniFooter />
+            </DefaultProviders>
+            <AccountNav />
+          </PurchaseJourneyProvider>
         </CartProvider>
       </body>
     </html>

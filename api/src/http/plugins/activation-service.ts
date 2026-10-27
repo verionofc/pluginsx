@@ -9,6 +9,7 @@ import {
   LicenseActivationReceipt,
 } from "../../database/models/LicenseServerEvent.js";
 import { PlanAccess } from "../../database/models/PlanAccess.js";
+import { isPaidAccessFunded } from "./plan-access.js";
 import { PlanPurchase } from "../../database/models/PlanPurchase.js";
 import { BillingRateLimit } from "../../database/models/BillingRateLimit.js";
 import {
@@ -115,18 +116,23 @@ export async function licenseEntitlement(
     );
   if (license.expiresAt && license.expiresAt <= new Date())
     throw new ActivationError("EXPIRED_LICENSE", "Esta licença expirou.", 403);
-  const access = license.ownerId
-    ? await PlanAccess.findOne({ userId: license.ownerId })
-        .session(session ?? null)
-        .lean()
-    : null;
+  const trial = license.sourcePlan === "trial" || Boolean(license.expiresAt);
+  const access =
+    license.ownerId && !trial
+      ? await PlanAccess.findOne({ userId: license.ownerId })
+          .session(session ?? null)
+          .lean()
+      : null;
   if (
     license.ownerId &&
+    !trial &&
     (!access ||
       access.status !== "active" ||
+      !(await isPaidAccessFunded(access, session)) ||
       (access.plan === "monthly" &&
         (!access.expiresAt || access.expiresAt <= new Date())) ||
-      !["monthly", "lifetime", "aether"].includes(access.plan))
+      !["monthly", "lifetime", "aether"].includes(access.plan) ||
+      (license.sourcePlan && license.sourcePlan !== access.plan))
   )
     throw new ActivationError(
       "INACTIVE_LICENSE",
@@ -136,12 +142,12 @@ export async function licenseEntitlement(
   const id =
     license.sourcePlan === "trial" || license.expiresAt
       ? "free"
-      : (access?.plan ?? license.sourcePlan ?? "monthly");
+      : (license.sourcePlan ?? access?.plan ?? "monthly");
   const terms =
     (id === "free" ? license.planTerms : access?.planTerms) ??
     acceptedPlanTerms(config, config.plans.find((p) => p.id === id)!);
   let additional = 0;
-  if (license.ownerId) {
+  if (license.ownerId && !trial) {
     const rows = await PlanPurchase.aggregate<{ total: number }>([
       { $match: { userId: license.ownerId, status: "approved" } },
       {

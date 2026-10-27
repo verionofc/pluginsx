@@ -13,16 +13,18 @@ import {
 } from "react-icons/tb";
 
 import { useCart } from "@/components/cart/CartProvider";
-import {
-  PendingCheckout,
-  type PendingPurchase,
-} from "@/components/cart/PendingCheckout";
+import { usePurchaseJourney } from "@/components/cart/PurchaseJourneyProvider";
+import { PurchaseProgress } from "@/components/cart/PurchaseProgress";
 import {
   type OfferDetails,
   PlanPromotion,
 } from "@/components/ui/PlanPromotion";
 import { useHydrated } from "@/hooks/useHydrated";
 import { authClient } from "@/lib/auth-client";
+import {
+  type PurchaseProgressData,
+  purchaseUpdatedEvent,
+} from "@/lib/purchase-progress";
 
 type PlanCatalog = {
   plans: OfferDetails[];
@@ -34,7 +36,7 @@ type PlanCatalog = {
 };
 
 type BillingState = {
-  lastPurchase?: PendingPurchase | null;
+  lastPurchase?: PurchaseProgressData | null;
   access: null | {
     plan: "free" | "monthly" | "lifetime" | "aether";
     status: string;
@@ -61,6 +63,7 @@ const currency = new Intl.NumberFormat("pt-BR", {
 export function CartPage() {
   const { data: session, isPending: sessionPending } = authClient.useSession();
   const sessionUserId = session?.user.id;
+  const { prepareCheckout, beginCheckout } = usePurchaseJourney();
   const sessionScope = useRef(sessionUserId);
   useEffect(() => {
     sessionScope.current = sessionUserId;
@@ -73,7 +76,6 @@ export function CartPage() {
     setPlan,
     setServerSlots,
     setCouponCode,
-    settlePurchase,
   } = useCart();
   const [catalog, setCatalog] = useState<PlanCatalog>();
   const [billingState, setBilling] = useState<BillingState>();
@@ -85,12 +87,10 @@ export function CartPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
-  const [returnStatus, setReturnStatus] = useState<string | null>(null);
   const [couponQuote, setCouponQuote] = useState<CouponQuote | null>(null);
   const [couponQuoteKey, setCouponQuoteKey] = useState("");
   const [couponBusy, setCouponBusy] = useState(false);
   const [couponMessage, setCouponMessage] = useState("");
-  const handledPurchaseRef = useRef<string | null>(null);
 
   const refreshBilling = useCallback(async () => {
     if (sessionScope.current !== sessionUserId) return;
@@ -154,101 +154,10 @@ export function CartPage() {
   }, [isSessionReady, refreshBilling]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    setReturnStatus(new URLSearchParams(window.location.search).get("return"));
-  }, []);
-
-  useEffect(() => {
-    if (!sessionUserId || !cartReady || typeof window === "undefined") return;
-    const reference = new URLSearchParams(window.location.search).get(
-      "purchase",
-    );
-    if (
-      !reference ||
-      !/^[0-9a-f-]{36}$/i.test(reference) ||
-      handledPurchaseRef.current === reference
-    )
-      return;
-    handledPurchaseRef.current = reference;
-    let cancelled = false;
-    let completed = false;
-
-    async function checkPurchase() {
-      let pendingMessage = "";
-      for (let attempt = 0; attempt < 9 && !cancelled; attempt += 1) {
-        try {
-          const response = await fetch(`/billing/purchase/${reference}`, {
-            credentials: "include",
-            cache: "no-store",
-          });
-          if (response.ok) {
-            const purchase = (await response.json()) as {
-              plan: string;
-              serverSlots?: number;
-              status: string;
-              message?: string;
-              upgradeCreditReversed?: boolean;
-            };
-            if (cancelled) return;
-            if (purchase.upgradeCreditReversed) {
-              completed = true;
-              setMessage(
-                purchase.message ??
-                  "O crédito deste upgrade foi estornado. A compra precisa de revisão pelo suporte.",
-              );
-              await refreshBilling();
-              return;
-            }
-            if (purchase.status === "approved") {
-              completed = true;
-              const slots = Number(purchase.serverSlots ?? 0);
-              settlePurchase(purchase.plan, slots, reference as string);
-              setMessage(
-                purchase.plan === "server_slots"
-                  ? `${slots} ${slots === 1 ? "vaga extra confirmada" : "vagas extras confirmadas"}.`
-                  : purchase.plan === "monthly"
-                    ? "Cobrança confirmada. Consulte a validade atual da licença na sua conta."
-                    : `Pagamento confirmado${slots ? ` com ${slots} ${slots === 1 ? "vaga extra" : "vagas extras"}` : ""}. Consulte a licença na sua conta.`,
-              );
-              setReturnStatus("success");
-              await refreshBilling();
-              return;
-            }
-            if (purchase.message) {
-              pendingMessage = purchase.message;
-              setMessage(pendingMessage);
-            }
-            if (
-              ["rejected", "cancelled", "refunded", "charged_back"].includes(
-                purchase.status,
-              )
-            ) {
-              completed = true;
-              setMessage(
-                "O pagamento não foi aprovado. Os itens continuam no carrinho.",
-              );
-              return;
-            }
-          }
-        } catch {
-          // Wait for the payment webhook to update this purchase.
-        }
-        await new Promise((resolve) => window.setTimeout(resolve, 2_000));
-      }
-      if (!cancelled)
-        setMessage(
-          pendingMessage ||
-            "Pagamento em processamento. O carrinho será atualizado quando a confirmação chegar.",
-        );
-    }
-
-    void checkPurchase();
-    return () => {
-      cancelled = true;
-      if (!completed && handledPurchaseRef.current === reference)
-        handledPurchaseRef.current = null;
-    };
-  }, [sessionUserId, cartReady, settlePurchase, refreshBilling]);
+    const update = () => void refreshBilling();
+    window.addEventListener(purchaseUpdatedEvent, update);
+    return () => window.removeEventListener(purchaseUpdatedEvent, update);
+  }, [refreshBilling]);
 
   const access = billing?.access;
   const activePaid = Boolean(
@@ -394,6 +303,7 @@ export function CartPage() {
     setBusy(true);
     setError("");
     setMessage("");
+    const paymentWindow = prepareCheckout();
     try {
       const response = await fetch("/billing/checkout", {
         method: "POST",
@@ -422,8 +332,14 @@ export function CartPage() {
       ) {
         throw new Error("Checkout indisponível.");
       }
-      window.location.assign(result.checkoutUrl);
+      beginCheckout(
+        result.purchaseReference,
+        result.checkoutUrl,
+        paymentWindow,
+      );
+      setBusy(false);
     } catch (checkoutError) {
+      paymentWindow?.close();
       setError(
         checkoutError instanceof Error
           ? checkoutError.message
@@ -468,26 +384,8 @@ export function CartPage() {
         </div>
       </header>
 
-      <PendingCheckout
-        purchase={billing?.lastPurchase}
-        refreshing={billingLoading}
-        onRefresh={() => void refreshBilling()}
-      />
+      <PurchaseProgress />
 
-      {returnStatus && (
-        <output
-          aria-live="polite"
-          className="mb-4 block border-l-4 border-[#e3bd59] bg-warning-surface px-4 py-3 text-sm leading-6 text-amber-100"
-        >
-          {returnStatus === "success"
-            ? "Retorno recebido. A confirmação do pagamento é consultada no servidor."
-            : returnStatus === "pending"
-              ? "Pagamento pendente; os itens continuam no carrinho até a confirmação."
-              : returnStatus === "failure"
-                ? "O pagamento não foi concluído; você pode tentar novamente."
-                : "Autorização recebida. A primeira cobrança precisa ser confirmada para liberar o Creeper."}
-        </output>
-      )}
       {message && (
         <output
           aria-live="polite"

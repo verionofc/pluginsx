@@ -31,10 +31,13 @@ import {
 import { ServerDetailsDialog } from "@/components/account/ServerDetailsDialog";
 import { ServerItemIcon } from "@/components/account/ServerItemIcon";
 import { ServerProfileEditor } from "@/components/account/ServerProfileEditor";
+import { usePurchaseJourney } from "@/components/cart/PurchaseJourneyProvider";
+import { PurchaseProgress } from "@/components/cart/PurchaseProgress";
 import { SiteLoadingScreen } from "@/components/ui/SiteLoadingScreen";
 import { useHydrated } from "@/hooks/useHydrated";
 import { useLoadingDelay } from "@/hooks/useLoadingDelay";
 import { apiUrl, authClient } from "@/lib/auth-client";
+import { purchaseIsReady, purchaseUpdatedEvent } from "@/lib/purchase-progress";
 import {
   orderServers,
   type ServerProfileFields,
@@ -223,6 +226,7 @@ function TrialCountdown({
 }
 
 function LicensesPanel() {
+  const journey = usePurchaseJourney();
   const [detailsServerId, setDetailsServerId] = useState<string | null>(null);
   const [licenses, setLicenses] = useState<AccountLicense[]>([]);
   const [expiredTrials, setExpiredTrials] = useState<Set<string>>(
@@ -289,6 +293,42 @@ function LicensesPanel() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    const update = () => void refresh();
+    const visible = () => {
+      if (document.visibilityState !== "hidden") update();
+    };
+    window.addEventListener(purchaseUpdatedEvent, update);
+    window.addEventListener("focus", update);
+    document.addEventListener("visibilitychange", visible);
+    return () => {
+      window.removeEventListener(purchaseUpdatedEvent, update);
+      window.removeEventListener("focus", update);
+      document.removeEventListener("visibilitychange", visible);
+    };
+  }, [refresh]);
+
+  useEffect(() => {
+    const ref = journey.purchase?.licenseRef;
+    if (
+      !ref ||
+      !licenses.some((license) => license.id === ref) ||
+      window.location.hash !== `#license-${ref}`
+    )
+      return;
+    const frame = requestAnimationFrame(() => {
+      const card = document.getElementById(`license-${ref}`);
+      card?.scrollIntoView({
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? "auto"
+          : "smooth",
+        block: "start",
+      });
+      card?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [licenses, journey.purchase?.licenseRef]);
 
   const markTrialExpired = useCallback((licenseId: string) => {
     setExpiredTrials((expired) => {
@@ -674,7 +714,14 @@ function LicensesPanel() {
                 return (
                   <article
                     key={license.id}
+                    id={`license-${license.id}`}
+                    tabIndex={-1}
                     className="license-card"
+                    data-acquired={Boolean(
+                      journey.purchase &&
+                        purchaseIsReady(journey.purchase) &&
+                        journey.purchase.licenseRef === license.id,
+                    )}
                     data-license-plan={edition}
                     data-license-state={licenseUsable ? "active" : "inactive"}
                     aria-labelledby={titleId}
@@ -1372,6 +1419,7 @@ export function AccountPage() {
               </div>
             </section>
 
+            <PurchaseProgress />
             <LicensesPanel />
 
             <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-4 text-xs text-white/65">
