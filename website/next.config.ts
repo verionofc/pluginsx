@@ -21,8 +21,21 @@ const nextConfig: NextConfig = {
       { source: "/about/:path*", destination: `${apiUrl}/about/:path*` },
       { source: "/license/:path*", destination: `${apiUrl}/license/:path*` },
       { source: "/billing/:path*", destination: `${apiUrl}/billing/:path*` },
+      { source: "/remote/:path*", destination: `${apiUrl}/remote/:path*` },
       { source: "/panel/:path*", destination: `${apiUrl}/panel/:path*` },
       { source: "/me/:path*", destination: `${apiUrl}/me/:path*` },
+    ];
+  },
+  async headers() {
+    return [
+      {
+        source: "/server/:path*",
+        headers: [
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "X-Robots-Tag", value: "noindex, nofollow" },
+          { key: "Cache-Control", value: "private, no-store" },
+        ],
+      },
     ];
   },
   turbopack: {

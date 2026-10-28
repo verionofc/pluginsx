@@ -56,6 +56,7 @@ export interface LicenseServerInterface {
   lastHeartbeatAt?: Date;
   actorCapturedAt?: Date;
   privacyRevision?: number;
+  remoteRevision?: number;
 }
 
 const LicenseServerSchema = new Schema<LicenseServerInterface>({
@@ -108,6 +109,7 @@ const LicenseServerSchema = new Schema<LicenseServerInterface>({
   lastHeartbeatAt: Date,
   actorCapturedAt: Date,
   privacyRevision: { type: Number, default: 0 },
+  remoteRevision: { type: Number, default: 0 },
 });
 LicenseServerSchema.index({ licenseId: 1, serverId: 1 }, { unique: true });
 

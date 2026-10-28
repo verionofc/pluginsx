@@ -81,6 +81,17 @@ const { licensingAdminRoutes } = await import(
   "./http/routes/licensing-admin.js"
 );
 const { activationRoutes } = await import("./http/routes/activation.js");
+const { remoteSpawnerXRoutes } = await import(
+  "./http/routes/remote-spawnerx.js"
+);
+const { RemoteSession, RemoteRevision, RemoteOperation } = await import(
+  "./database/models/RemoteSpawnerX.js"
+);
+await Promise.all([
+  RemoteSession.init(),
+  RemoteRevision.init(),
+  RemoteOperation.init(),
+]);
 const { minecraftMediaRoutes } = await import(
   "./http/routes/minecraft-media.js"
 );
@@ -227,6 +238,7 @@ const app = new Elysia({ name: "PluginsX API", adapter: node() })
   .use(licenseRoutes)
   .use(licenseServerRoutes)
   .use(activationRoutes)
+  .use(remoteSpawnerXRoutes)
   .use(minecraftMediaRoutes)
   .use(billingRoutes)
   .use(panelRoutes)

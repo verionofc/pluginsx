@@ -24,6 +24,7 @@ import { getServerLimitForPlan } from "../plugins/billing-config.js";
 import { view } from "../plugins/license.js";
 import { ensurePaidPlanLicense } from "../plugins/paid-plan-license.js";
 import { BillingConflict } from "../plugins/billing-lock.js";
+import { RemoteSession } from "../../database/models/RemoteSpawnerX.js";
 import { getPaidPlan, hasTrustedWebOrigin } from "../plugins/plan-access.js";
 import { getMonthlyBilling } from "../plugins/monthly-billing.js";
 import {
@@ -154,6 +155,12 @@ const publicRecord = (
   record: any,
   accountView = false,
   offlineSeconds = 180,
+  remote = {
+    state: "DISCONNECTED",
+    online: false,
+    manageable: false,
+    reason: "Execute /sx connect no Minecraft para conectar o SpawnerX.",
+  },
 ) => ({
   id: record._id,
   serverId: record.serverId,
@@ -175,6 +182,10 @@ const publicRecord = (
   lastHeartbeatAt: record.lastHeartbeatAt ?? null,
   ...(accountView
     ? {
+        remote,
+        plugins: [
+          { id: "spawnerx", name: "SpawnerX", version: record.pluginVersion },
+        ],
         activatedBy: record.activatedBy ?? null,
         authentication: record.authentication ?? null,
         accountVerification: record.accountVerification ?? "UNKNOWN",
@@ -456,6 +467,19 @@ export const licenseServerRoutes = new Elysia({ prefix: "/license" })
       )
         ? await getMonthlyBilling(user.id)
         : null;
+      const remoteRows = await RemoteSession.find({
+        _id: { $in: records.map((row) => row._id) },
+        ownerId: user.id,
+      })
+        .select({
+          _id: 1,
+          state: 1,
+          leaseExpiresAt: 1,
+          expiresAt: 1,
+          hardExpiresAt: 1,
+        })
+        .lean();
+      const remoteById = new Map(remoteRows.map((row) => [row._id, row]));
       const inventory = await Promise.all(
         licenses.map(async (license) => {
           const { plan, limit, unlimited } = licenseLimits.get(license._id) ?? {
@@ -471,11 +495,12 @@ export const licenseServerRoutes = new Elysia({ prefix: "/license" })
             : null;
           const matchingAccess = access?.plan === plan ? access : null;
           const terms = license.planTerms ?? matchingAccess?.planTerms;
+          const valid = (await view(license._id)).valid;
           return {
             planName: terms?.name ?? null,
             id: accountLicenseRef(license._id),
             tier: license.value.tier,
-            valid: (await view(license._id)).valid,
+            valid,
             plan,
             terms: terms ?? null,
             expiresAt:
@@ -488,9 +513,40 @@ export const licenseServerRoutes = new Elysia({ prefix: "/license" })
             unlimited: license.value.tier === "plus" && unlimited,
             servers: records
               .filter((record) => record.licenseId === license._id)
-              .map((record) =>
-                publicRecord(record, true, config.policy.offlineAfterSeconds),
-              ),
+              .map((record) => {
+                const remote = remoteById.get(record._id);
+                const paid = valid && plan !== "trial" && !license.expiresAt;
+                const live = Boolean(
+                  paid &&
+                    record.state === "ACTIVE" &&
+                    remote &&
+                    remote.leaseExpiresAt > now &&
+                    remote.expiresAt > now &&
+                    remote.hardExpiresAt > now &&
+                    ["PENDING", "WEB_APPROVED", "CONNECTED"].includes(
+                      remote.state,
+                    ),
+                );
+                const manageable = live && remote?.state === "CONNECTED";
+                return publicRecord(
+                  record,
+                  true,
+                  config.policy.offlineAfterSeconds,
+                  {
+                    state:
+                      remote?.state === "CONNECTED" && !live
+                        ? "DISCONNECTED"
+                        : (remote?.state ?? "DISCONNECTED"),
+                    online: live,
+                    manageable,
+                    reason: !paid
+                      ? "O gerenciamento remoto exige um plano Premium/Plus pago e ativo."
+                      : manageable
+                        ? "Canal autenticado operacional."
+                        : "Execute /sx connect no Minecraft para conectar o SpawnerX.",
+                  },
+                );
+              }),
           };
         }),
       );

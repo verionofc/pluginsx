@@ -17,6 +17,7 @@ import {
   TbPick,
   TbPin,
   TbPinnedOff,
+  TbPlugConnected,
   TbRefresh,
   TbShieldCheck,
   TbUserCircle,
@@ -73,6 +74,13 @@ type ServerActivation = ServerProfileFields & {
   } | null;
   approvedAt?: string | null;
   lastHeartbeatAt?: string | null;
+  plugins?: { id: string; name: string; version: string }[];
+  remote?: {
+    state: string;
+    online: boolean;
+    manageable: boolean;
+    reason?: string;
+  };
 };
 
 type AccountLicense = {
@@ -90,6 +98,81 @@ type AccountLicense = {
 };
 
 type Feedback = { tone: "success" | "error"; text: string };
+
+function RemoteServerAccess({
+  server,
+  license,
+}: {
+  server: ServerActivation;
+  license: AccountLicense;
+}) {
+  const paid = license.plan !== "trial" && license.plan !== null;
+  const manageable = Boolean(
+    paid && license.valid && server.remote?.manageable,
+  );
+  const online = server.connection === "ONLINE" || server.remote?.online;
+  const label = manageable
+    ? "Conectado ao painel"
+    : !paid
+      ? "Gerenciamento exclusivo Premium/Plus"
+      : !license.valid
+        ? "Licença precisa de regularização"
+        : online
+          ? "Online · execute /sx connect"
+          : "Servidor sem comunicação recente";
+  return (
+    <div className="remote-account-access">
+      <div>
+        <strong>
+          <TbPlugConnected aria-hidden="true" size={14} />
+          {label}
+        </strong>
+        <p>
+          {server.plugins
+            ?.map((plugin) => `${plugin.name} ${plugin.version}`)
+            .join(" · ") ?? `SpawnerX ${server.pluginVersion}`}
+          {online && !manageable && paid && license.valid
+            ? " · Requer SpawnerX beta.4 ou posterior"
+            : ""}
+        </p>
+      </div>
+      {!paid ? (
+        <button
+          type="button"
+          disabled
+          title="O Trial não inclui gerenciamento remoto."
+          className="min-h-10 cursor-not-allowed border border-outline px-3 text-xs text-muted opacity-50"
+        >
+          Gerenciar SpawnerX
+        </button>
+      ) : !license.valid ? (
+        <Link
+          href="/plans"
+          className="min-h-10 border border-outline px-3 py-3 text-xs font-semibold text-accent-soft"
+        >
+          Regularizar acesso
+        </Link>
+      ) : manageable || online ? (
+        <Link
+          href={`/server/${server.id}/spawnerx${manageable ? "" : "/connect"}`}
+          className="inline-flex min-h-10 items-center gap-2 border border-outline px-3 text-xs font-semibold text-accent-soft hover:bg-surface-raised"
+        >
+          <TbPlugConnected aria-hidden="true" size={14} />
+          {manageable ? "Gerenciar SpawnerX" : "Conectar SpawnerX"}
+        </Link>
+      ) : (
+        <button
+          type="button"
+          disabled
+          className="min-h-10 cursor-not-allowed border border-outline px-3 text-xs text-muted opacity-50"
+          title="O servidor precisa estar online e conectado à API."
+        >
+          Gerenciar SpawnerX
+        </button>
+      )}
+    </div>
+  );
+}
 
 const portalTiles = Array.from({ length: 16 }, (_, index) => index);
 
@@ -1080,6 +1163,10 @@ function LicensesPanel() {
                                   · ID {server.serverId.slice(0, 8)} · Ativação{" "}
                                   {formatDate(server.approvedAt)}
                                 </p>
+                                <RemoteServerAccess
+                                  server={server}
+                                  license={license}
+                                />
                                 <div className="mt-3 flex flex-wrap gap-2">
                                   <button
                                     type="button"

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
+import { Suspense } from "react";
 
 import "@/styles/globals.css";
 import { CartProvider } from "@/components/cart/CartProvider";
@@ -91,13 +92,15 @@ export default function RootLayout({
       <body className="antialiased relative isolate flex min-h-screen w-full flex-col overflow-x-hidden">
         <SiteBackground />
         <CartProvider>
-          <PurchaseJourneyProvider>
-            <DefaultProviders>
-              {children}
-              <MiniFooter />
-            </DefaultProviders>
-            <AccountNav />
-          </PurchaseJourneyProvider>
+          <Suspense fallback={null}>
+            <PurchaseJourneyProvider>
+              <DefaultProviders>
+                {children}
+                <MiniFooter />
+              </DefaultProviders>
+              <AccountNav />
+            </PurchaseJourneyProvider>
+          </Suspense>
         </CartProvider>
       </body>
     </html>

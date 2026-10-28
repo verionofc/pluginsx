@@ -74,3 +74,23 @@ Ao retornar, inclusive sem parâmetros na URL, o pedido é recuperado por conta.
 O recibo com a arte do plano e a animação de conquista aparece uma única vez
 após a key estar pronta. O inventário atualiza e destaca o card correspondente,
 respeitando movimento reduzido. Veja o [fluxo completo](../docs/COMPRA_LICENCAS_INDEPENDENTES.md).
+
+## Gerenciamento remoto · v0.5.0
+
+`/account` abre a bancada do SpawnerX em `/server/[serverId]/spawnerx`. O servidor
+precisa executar uma versão compatível com o protocolo remoto, iniciar
+`/sx connect` e concluir a autorização no website e no Minecraft. A rota é
+verificada no servidor, e a API valida a titularidade e a licença em cada ação.
+
+Os formulários e os padrões vêm das capacidades reais da instalação. O editor
+avançado utiliza o parser `yaml` com validação de estrutura e rejeição de aliases;
+somente propriedades públicas dos documentos são expostas. Um rascunho salvo no
+website ainda não altera o jogo. Aplicação, reload e restauração só aparecem
+como concluídos depois do resultado do plugin, e exigem uma sessão operacional.
+
+O link de conexão transporta o token no fragmento, removido ao abrir a tela.
+Tokens ficam apenas na memória da página; o login pode abrir em uma janela
+separada. Não há credenciais internas de comunicação no frontend.
+
+Veja o [protocolo beta.4](../docs/REMOTE_PROTOCOL_BETA4.md) para o contrato e os
+estados de entrega, conexão, auditoria e recuperação.

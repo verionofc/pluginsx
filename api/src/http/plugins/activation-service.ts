@@ -485,8 +485,14 @@ export async function activationResponse(
   let features: string[] = [];
   let permissions: string[] = [];
   let licenseExpiresAt: Date | null = null;
+  let licensePlan: string | null = null;
   if (record.state === "ACTIVE") {
     const entitlement = await licenseEntitlement(record.licenseId, config);
+    licensePlan =
+      entitlement.license.sourcePlan ??
+      (entitlement.license.expiresAt
+        ? "trial"
+        : (entitlement.access?.plan ?? null));
     features = entitlement.terms.features;
     permissions = entitlement.terms.permissions;
     licenseExpiresAt =
@@ -558,6 +564,7 @@ export async function activationResponse(
     serverTime: new Date(),
     licenseRef: licenseReference(record.licenseId),
     licenseExpiresAt,
+    licensePlan,
     features,
     permissions,
     ...(activationCredential ? { activationCredential } : {}),

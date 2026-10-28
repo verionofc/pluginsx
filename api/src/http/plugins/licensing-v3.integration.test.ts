@@ -19,6 +19,11 @@ import { PlanAccess } from "../../database/models/PlanAccess.js";
 import { PlanPurchase } from "../../database/models/PlanPurchase.js";
 import { BillingTransaction } from "../../database/models/BillingTransaction.js";
 import { BillingRateLimit } from "../../database/models/BillingRateLimit.js";
+import {
+  RemoteSession,
+  RemoteRevision,
+  RemoteOperation,
+} from "../../database/models/RemoteSpawnerX.js";
 import { acceptedPlanTerms } from "../../domain/licensing-config.js";
 import type { ActivationActor } from "../../domain/activation.js";
 const uri = process.env.COUPON_TEST_MONGODB_URI;
@@ -79,6 +84,9 @@ describe("licensing beta.3 integration", { skip: !uri }, () => {
       PlanPurchase.init(),
       BillingTransaction.init(),
       BillingRateLimit.init(),
+      RemoteSession.init(),
+      RemoteRevision.init(),
+      RemoteOperation.init(),
     ]);
     const { licensingAdminRoutes } = await import(
       "../routes/licensing-admin.js"
@@ -88,11 +96,15 @@ describe("licensing beta.3 integration", { skip: !uri }, () => {
       "../routes/license-servers.js"
     );
     const { billingRoutes } = await import("../routes/billing.js");
+    const { remoteSpawnerXRoutes } = await import(
+      "../routes/remote-spawnerx.js"
+    );
     app = new Elysia()
       .use(licensingAdminRoutes)
       .use(activationRoutes)
       .use(licenseServerRoutes)
       .use(billingRoutes)
+      .use(remoteSpawnerXRoutes)
       .compile() as unknown as Elysia;
   });
   after(async () => {
@@ -112,6 +124,9 @@ describe("licensing beta.3 integration", { skip: !uri }, () => {
       PlanPurchase.deleteMany({}),
       BillingTransaction.deleteMany({}),
       BillingRateLimit.deleteMany({}),
+      RemoteSession.deleteMany({}),
+      RemoteRevision.deleteMany({}),
+      RemoteOperation.deleteMany({}),
       mongoose.connection.db!.collection("user").deleteMany({}),
       mongoose.connection.db!.collection("session").deleteMany({}),
     ]);
@@ -2615,5 +2630,662 @@ describe("licensing beta.3 integration", { skip: !uri }, () => {
     assert.equal((await view(key)).valid, true);
     assert.equal(await hasPremiumAccess(ownerId), true);
     assert.equal((await ensurePaidPlanLicense(ownerId, "lifetime")).code, key);
+  });
+  function remoteSnapshot(hash = "a".repeat(64), enabled = true) {
+    const bool = {
+      type: "boolean",
+      title: "Ativo",
+      description: "Habilitar o recurso",
+      default: true,
+      reload: "RELOAD",
+    };
+    const shop = {
+      type: "object",
+      properties: {
+        spawner: {
+          type: "object",
+          properties: {
+            shop: {
+              type: "object",
+              properties: {
+                enabled: bool,
+                currency: { type: "string", enum: ["XP"], default: "XP" },
+              },
+              additionalProperties: false,
+            },
+          },
+          additionalProperties: false,
+        },
+      },
+      additionalProperties: false,
+    };
+    const config = {
+      type: "object",
+      properties: {
+        locale: { type: "string", enum: ["pt_BR", "en_US"], default: "pt_BR" },
+        spawner: {
+          type: "object",
+          properties: { "stacking-enabled": bool },
+          additionalProperties: false,
+        },
+      },
+      additionalProperties: false,
+    };
+    const defaults = {
+      config: { locale: "pt_BR", spawner: { "stacking-enabled": true } },
+      shop: { spawner: { shop: { enabled: true, currency: "XP" } } },
+    };
+    return {
+      configHash: hash,
+      documents: {
+        ...structuredClone(defaults),
+        config: { locale: "pt_BR", spawner: { "stacking-enabled": enabled } },
+      },
+      capabilities: {
+        schemaVersion: 1,
+        pluginVersion: "1.0.0-beta.4",
+        operations: ["APPLY", "PLUGIN_RELOAD", "SYNC", "RESTORE"],
+        schema: { config, shop },
+        defaults,
+      },
+    };
+  }
+  async function remoteFixture() {
+    const { key } = await fixture();
+    const a = await activate(key);
+    await service.manageActivation(ownerId, a.row._id, "approve", true);
+    const { keyFingerprint } = await import("../../domain/activation.js");
+    const row = await service.authenticateInstallation(
+      a.row._id,
+      a.row.serverId,
+      a.input.requestId,
+      keyFingerprint(a.id.publicKey),
+    );
+    const activation = await service.activationResponse(row, a.config);
+    const base = {
+      activationId: row._id,
+      serverId: row.serverId,
+      requestId: a.input.requestId,
+    };
+    async function plugin(
+      action: string,
+      data: Record<string, unknown>,
+      credential = activation.activationCredential,
+    ) {
+      const { sign, createHash } = await import("node:crypto"),
+        path = `/remote/spawnerx/plugin/${action}`,
+        payload = JSON.stringify({ ...base, ...data }),
+        nonce = randomUUID(),
+        timestamp = String(Date.now());
+      const body = {
+        payload,
+        publicKey: a.id.publicKey,
+        nonce,
+        timestamp,
+        signature: sign(
+          null,
+          Buffer.from(
+            `POST\n${path}\n${timestamp}\n${nonce}\n${createHash("sha256").update(payload).digest("hex")}`,
+          ),
+          a.id.privateKey,
+        ).toString("base64"),
+      };
+      return app.handle(
+        new Request(`http://localhost:3000${path}`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${credential}`,
+          },
+          body: JSON.stringify(body),
+        }),
+      );
+    }
+    const response = await plugin("connect", {
+      actor,
+      snapshot: remoteSnapshot(),
+    });
+    assert.equal(response.status, 200, await response.clone().text());
+    const connect = (await response.json()) as {
+      sessionId: string;
+      code: string;
+      url: string;
+    };
+    const token = new URLSearchParams(new URL(connect.url).hash.slice(1)).get(
+      "token",
+    )!;
+    return {
+      ...a,
+      key,
+      row,
+      plugin,
+      connect,
+      token,
+      prefix: `/remote/spawnerx/servers/${row._id}`,
+    };
+  }
+  async function remoteConnected() {
+    const f = await remoteFixture();
+    const approve = await request(f.prefix + "/authorize", "POST", {
+      requestId: f.connect.sessionId,
+      token: f.token,
+      decision: "approve",
+    });
+    assert.equal(approve.status, 200, await approve.clone().text());
+    const polled = await f.plugin("poll", {
+      sessionId: f.connect.sessionId,
+      operational: true,
+    });
+    assert.equal(polled.status, 200, await polled.clone().text());
+    const confirmation = (await polled.json()) as { confirmationToken: string };
+    const confirm = await f.plugin("confirm", {
+      sessionId: f.connect.sessionId,
+      playerUuid: actor.uuid,
+      confirmationToken: confirmation.confirmationToken,
+      decision: "confirm",
+      snapshot: remoteSnapshot(),
+    });
+    assert.equal(confirm.status, 200, await confirm.clone().text());
+    return f;
+  }
+  test("remote handshake requires website ownership and exact Minecraft player confirmation; tokens stay private and one-use", async () => {
+    const f = await remoteFixture();
+    assert.equal(new URL(f.connect.url).search, "");
+    const saved = await RemoteSession.findById(f.row._id)
+      .select("+tokenHash")
+      .lean();
+    assert.notEqual(saved!.tokenHash, f.token);
+    const state = await request(f.prefix);
+    assert.equal(state.status, 200);
+    const before = (await state.json()) as {
+      manageable: boolean;
+      session: { state: string };
+    };
+    assert.equal(before.manageable, false);
+    assert.equal(before.session.state, "PENDING");
+    assert.ok(!JSON.stringify(before).includes(f.token));
+    assert.equal(
+      (await request(f.prefix, "GET", undefined, userCookie)).status,
+      404,
+    );
+    const input = {
+      requestId: f.connect.sessionId,
+      token: f.token,
+      decision: "approve",
+    };
+    assert.equal(
+      (
+        await request(f.prefix + "/authorize", "POST", {
+          ...input,
+          token: "x".repeat(43),
+        })
+      ).status,
+      403,
+    );
+    assert.equal(
+      await LicenseServerEvent.countDocuments({
+        serverRecordId: f.row._id,
+        action: "REMOTE_INVALID_TOKEN",
+      }),
+      1,
+    );
+    assert.equal(
+      (await request(f.prefix + "/authorize", "POST", input, userCookie))
+        .status,
+      404,
+    );
+    assert.equal(
+      (await request(f.prefix + "/authorize", "POST", input)).status,
+      200,
+    );
+    assert.equal(
+      (await request(f.prefix + "/authorize", "POST", input)).status,
+      409,
+    );
+    assert.equal(
+      (
+        await request(f.prefix + "/operations", "POST", {
+          kind: "PLUGIN_RELOAD",
+          expectedHash: "a".repeat(64),
+          confirmed: true,
+        })
+      ).status,
+      409,
+    );
+    const poll = (await (
+      await f.plugin("poll", {
+        sessionId: f.connect.sessionId,
+        operational: true,
+      })
+    ).json()) as { state: string; confirmationToken: string };
+    assert.equal(poll.state, "WEB_APPROVED");
+    assert.equal(
+      (
+        await f.plugin("confirm", {
+          sessionId: f.connect.sessionId,
+          playerUuid: randomUUID(),
+          confirmationToken: poll.confirmationToken,
+          decision: "confirm",
+        })
+      ).status,
+      403,
+    );
+    const confirm = {
+      sessionId: f.connect.sessionId,
+      playerUuid: actor.uuid,
+      confirmationToken: poll.confirmationToken,
+      decision: "confirm",
+    };
+    assert.equal((await f.plugin("confirm", confirm)).status, 200);
+    assert.equal((await f.plugin("confirm", confirm)).status, 409);
+    const after = (await (await request(f.prefix)).json()) as {
+      manageable: boolean;
+      session: { state: string; actor: { accountVerification: string } };
+    };
+    assert.equal(after.manageable, true);
+    assert.equal(after.session.state, "CONNECTED");
+    assert.equal(after.session.actor.accountVerification, "UNVERIFIED");
+    assert.ok(!JSON.stringify(after).includes(poll.confirmationToken));
+  });
+  test("remote expiry, wrong server, rejected request and Trial never permit administration", async () => {
+    const f = await remoteFixture();
+    await RemoteSession.updateOne(
+      { _id: f.row._id },
+      { $set: { approvalExpiresAt: new Date(Date.now() - 1) } },
+    );
+    assert.equal(
+      (
+        await request(f.prefix + "/authorize", "POST", {
+          requestId: f.connect.sessionId,
+          token: f.token,
+          decision: "approve",
+        })
+      ).status,
+      409,
+    );
+    const state = (await (await request(f.prefix)).json()) as {
+      session: { state: string };
+    };
+    assert.equal(state.session.state, "EXPIRED");
+    assert.equal(
+      (
+        await request(
+          `/remote/spawnerx/servers/${randomUUID()}/authorize`,
+          "POST",
+          {
+            requestId: f.connect.sessionId,
+            token: f.token,
+            decision: "approve",
+          },
+        )
+      ).status,
+      404,
+    );
+    await License.updateOne(
+      { _id: f.key },
+      {
+        $set: { sourcePlan: "trial", expiresAt: new Date(Date.now() + 60000) },
+      },
+    );
+    const trial = await f.plugin("connect", {
+      actor,
+      snapshot: remoteSnapshot(),
+    });
+    assert.equal(trial.status, 403, await trial.clone().text());
+    assert.equal(
+      ((await trial.json()) as { code: string }).code,
+      "PAID_PLAN_REQUIRED",
+    );
+    const after = (await (await request(f.prefix)).json()) as {
+      manageable: boolean;
+    };
+    assert.equal(after.manageable, false);
+  });
+  test("offline remote channel blocks saves/reloads and expires deliveries without replay on reconnect", async () => {
+    const f = await remoteConnected();
+    const operation = await request(f.prefix + "/operations", "POST", {
+      kind: "PLUGIN_RELOAD",
+      expectedHash: "a".repeat(64),
+      confirmed: true,
+    });
+    assert.equal(operation.status, 200);
+    const op = (await operation.json()) as {
+      operation: { id: string; status: string };
+    };
+    assert.equal(op.operation.status, "QUEUED");
+    await RemoteSession.updateOne(
+      { _id: f.row._id },
+      { $set: { leaseExpiresAt: new Date(0) } },
+    );
+    const state = (await (await request(f.prefix)).json()) as {
+      manageable: boolean;
+      operations: { status: string }[];
+    };
+    assert.equal(state.manageable, false);
+    assert.equal(state.operations[0]!.status, "EXPIRED");
+    assert.equal(
+      (
+        await request(f.prefix + "/draft", "POST", {
+          expectedRevision: null,
+          expectedHash: "a".repeat(64),
+          documents: remoteSnapshot().documents,
+        })
+      ).status,
+      409,
+    );
+    assert.equal(
+      (
+        await request(f.prefix + "/operations", "POST", {
+          kind: "PLUGIN_RELOAD",
+          expectedHash: "a".repeat(64),
+          confirmed: true,
+        })
+      ).status,
+      409,
+    );
+    const resumed = (await (
+      await f.plugin("poll", {
+        sessionId: f.connect.sessionId,
+        operational: true,
+        snapshot: remoteSnapshot(),
+      })
+    ).json()) as { state: string; operation?: unknown };
+    assert.equal(resumed.state, "CONNECTED");
+    assert.equal(resumed.operation, undefined);
+    assert.equal(
+      (
+        await f.plugin("result", {
+          sessionId: f.connect.sessionId,
+          operationId: op.operation.id,
+          status: "APPLIED",
+          message: "unexpected",
+          snapshot: remoteSnapshot(),
+        })
+      ).status,
+      409,
+    );
+  });
+  test("remote reload delivery is serialized and only a real matching plugin result records success", async () => {
+    const f = await remoteConnected(),
+      input = {
+        kind: "PLUGIN_RELOAD",
+        expectedHash: "a".repeat(64),
+        confirmed: true,
+      };
+    const responses = await Promise.all([
+      request(f.prefix + "/operations", "POST", input),
+      request(f.prefix + "/operations", "POST", input),
+    ]);
+    assert.deepEqual(responses.map((v) => v.status).sort(), [200, 409]);
+    const delivered = (await (
+      await f.plugin("poll", {
+        sessionId: f.connect.sessionId,
+        operational: true,
+      })
+    ).json()) as { operation: { id: string; kind: string } };
+    assert.equal(delivered.operation.kind, "PLUGIN_RELOAD");
+    const pending = await RemoteOperation.findById(
+      delivered.operation.id,
+    ).lean();
+    assert.equal(pending!.status, "SENT");
+    assert.equal(
+      (
+        await f.plugin("result", {
+          sessionId: f.connect.sessionId,
+          operationId: delivered.operation.id,
+          status: "APPLIED",
+          message: "done",
+        })
+      ).status,
+      400,
+    );
+    const result = {
+      sessionId: f.connect.sessionId,
+      operationId: delivered.operation.id,
+      status: "APPLIED",
+      message:
+        "SpawnerX recarregado com sucesso. As configurações foram aplicadas.",
+      snapshot: remoteSnapshot(),
+      backupId: "backup-fixture",
+    };
+    assert.equal((await f.plugin("result", result)).status, 200);
+    assert.equal((await f.plugin("result", result)).status, 200);
+    const finished = await RemoteOperation.findById(
+      delivered.operation.id,
+    ).lean();
+    assert.equal(finished!.status, "APPLIED");
+    assert.equal(finished!.busy, false);
+    assert.equal(
+      await RemoteRevision.countDocuments({
+        operationId: delivered.operation.id,
+      }),
+      1,
+    );
+  });
+  test("remote drafts validate schema and secret boundaries, use optimistic revision checks and detect local conflicts", async () => {
+    const f = await remoteConnected(),
+      docs = remoteSnapshot("a".repeat(64), false).documents;
+    const body = {
+      expectedRevision: null,
+      expectedHash: "a".repeat(64),
+      documents: docs,
+    };
+    const secret = {
+      ...body,
+      documents: {
+        ...docs,
+        config: { ...docs.config, license: { key: "never-transmit" } },
+      },
+    };
+    assert.equal(
+      (await request(f.prefix + "/draft", "POST", secret)).status,
+      400,
+    );
+    assert.equal(
+      (
+        await request(f.prefix + "/draft", "POST", {
+          ...body,
+          documents: {
+            ...docs,
+            shop: { spawner: { shop: { currency: "BRL" } } },
+          },
+        })
+      ).status,
+      400,
+    );
+    const saved = await request(f.prefix + "/draft", "POST", body);
+    assert.equal(saved.status, 200, await saved.clone().text());
+    const revision = (await saved.json()) as {
+      revision: { id: string; status: string };
+    };
+    assert.equal(revision.revision.status, "SAVED");
+    assert.equal(
+      (await request(f.prefix + "/draft", "POST", body)).status,
+      409,
+    );
+    const queued = await request(f.prefix + "/operations", "POST", {
+      kind: "APPLY",
+      expectedHash: "a".repeat(64),
+      revisionId: revision.revision.id,
+      confirmed: true,
+    });
+    assert.equal(queued.status, 200);
+    const changed = (await (
+      await f.plugin("poll", {
+        sessionId: f.connect.sessionId,
+        operational: true,
+        snapshot: remoteSnapshot("b".repeat(64)),
+      })
+    ).json()) as { operation?: unknown };
+    assert.equal(changed.operation, undefined);
+    const conflict = await RemoteOperation.findOne({
+      revisionId: revision.revision.id,
+    }).lean();
+    assert.equal(conflict!.status, "CONFLICT");
+  });
+  test("remote apply acknowledges new files once, retains revisions and restores only online", async () => {
+    const f = await remoteConnected(),
+      before = await RemoteRevision.findOne({
+        serverRecordId: f.row._id,
+        status: "SNAPSHOT",
+      }).lean();
+    const saved = (await (
+      await request(f.prefix + "/draft", "POST", {
+        expectedRevision: null,
+        expectedHash: "a".repeat(64),
+        documents: remoteSnapshot("a".repeat(64), false).documents,
+      })
+    ).json()) as { revision: { id: string } };
+    assert.equal(
+      (
+        await request(f.prefix + "/operations", "POST", {
+          kind: "APPLY",
+          expectedHash: "a".repeat(64),
+          revisionId: saved.revision.id,
+          confirmed: true,
+        })
+      ).status,
+      200,
+    );
+    const poll = (await (
+      await f.plugin("poll", {
+        sessionId: f.connect.sessionId,
+        operational: true,
+      })
+    ).json()) as { operation: { id: string } };
+    assert.equal(
+      (
+        await f.plugin("result", {
+          sessionId: f.connect.sessionId,
+          operationId: poll.operation.id,
+          status: "APPLIED",
+          message: "Aplicado",
+          snapshot: remoteSnapshot("b".repeat(64), false),
+          backupId: "before-apply",
+        })
+      ).status,
+      200,
+    );
+    const state = (await (await request(f.prefix)).json()) as {
+      snapshot: { hash: string };
+      draft: unknown;
+      history: unknown[];
+    };
+    assert.equal(state.snapshot.hash, "b".repeat(64));
+    assert.equal(state.draft, null);
+    assert.ok(state.history.length >= 5);
+    assert.equal(
+      (
+        await request(f.prefix + "/operations", "POST", {
+          kind: "RESTORE",
+          expectedHash: "b".repeat(64),
+          revisionId: before!._id,
+          confirmed: true,
+        })
+      ).status,
+      200,
+    );
+    const restore = (await (
+      await f.plugin("poll", {
+        sessionId: f.connect.sessionId,
+        operational: true,
+      })
+    ).json()) as { operation: { kind: string; documents: unknown } };
+    assert.equal(restore.operation.kind, "RESTORE");
+    assert.deepEqual(restore.operation.documents, remoteSnapshot().documents);
+    assert.equal(
+      (await request(f.prefix + "/disconnect", "POST", { confirmed: true }))
+        .status,
+      200,
+    );
+    const after = (await (await request(f.prefix)).json()) as {
+      session: { state: string };
+      operations: { status: string }[];
+    };
+    assert.equal(after.session.state, "REVOKED");
+    assert.equal(after.operations[0]!.status, "UNKNOWN");
+    assert.equal(
+      (
+        await request(f.prefix + "/operations", "POST", {
+          kind: "RESTORE",
+          expectedHash: "b".repeat(64),
+          revisionId: before!._id,
+          confirmed: true,
+        })
+      ).status,
+      409,
+    );
+  });
+  test("remote revocation and banned ownership stop authenticated plugin operations immediately", async () => {
+    const f = await remoteConnected();
+    await mongoose.connection
+      .db!.collection("user")
+      .updateOne(
+        { _id: new mongoose.Types.ObjectId(ownerId) },
+        { $set: { banned: true } },
+      );
+    const denied = await f.plugin("poll", {
+      sessionId: f.connect.sessionId,
+      operational: true,
+    });
+    assert.equal(denied.status, 403, await denied.clone().text());
+    assert.equal(
+      (await RemoteSession.findById(f.row._id).lean())!.state,
+      "REVOKED",
+    );
+    await mongoose.connection
+      .db!.collection("user")
+      .updateOne(
+        { _id: new mongoose.Types.ObjectId(ownerId) },
+        { $set: { banned: false } },
+      );
+    await License.updateOne({ _id: f.key }, { $set: { "value.valid": false } });
+    assert.equal(
+      (
+        await f.plugin("poll", {
+          sessionId: f.connect.sessionId,
+          operational: true,
+        })
+      ).status,
+      403,
+    );
+    const read = await request(f.prefix);
+    assert.equal(read.status, 200);
+    assert.equal(
+      ((await read.json()) as { manageable: boolean }).manageable,
+      false,
+    );
+  });
+  test("sent operations losing their lease are uncertain and stale results cannot resurrect them", async () => {
+    const f = await remoteConnected();
+    await request(f.prefix + "/operations", "POST", {
+      kind: "SYNC",
+      expectedHash: "a".repeat(64),
+      confirmed: true,
+    });
+    const polled = (await (
+      await f.plugin("poll", {
+        sessionId: f.connect.sessionId,
+        operational: true,
+      })
+    ).json()) as { operation: { id: string } };
+    await RemoteSession.updateOne(
+      { _id: f.row._id },
+      { $set: { leaseExpiresAt: new Date(0) } },
+    );
+    await request(f.prefix);
+    const result = await f.plugin("result", {
+      sessionId: f.connect.sessionId,
+      operationId: polled.operation.id,
+      status: "APPLIED",
+      message: "late",
+      snapshot: remoteSnapshot(),
+    });
+    assert.equal(result.status, 409);
+    assert.equal(
+      (await RemoteOperation.findById(polled.operation.id).lean())!.status,
+      "UNKNOWN",
+    );
+    assert.equal((await request(f.prefix + "/history")).status, 200);
   });
 });
