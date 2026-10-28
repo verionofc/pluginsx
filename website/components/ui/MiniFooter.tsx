@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   TbArrowUpRight,
   TbBlocks,
@@ -13,6 +14,13 @@ import { settings } from "@/lib";
 
 export function MiniFooter() {
   const { itemCount } = useCart();
+  const pathname = usePathname();
+
+  // The remote console has its own action rail and must remain fully usable
+  // on small screens. The global floating footer would cover editor controls.
+  if (pathname?.match(/^\/server\/[^/]+\/spawnerx(?:\/connect)?\/?$/)) {
+    return null;
+  }
 
   return (
     <footer className="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+0.5rem)] z-50 px-2 sm:px-3">
