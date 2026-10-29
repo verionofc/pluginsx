@@ -38,6 +38,9 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  images: {
+    remotePatterns: [{ protocol: "https", hostname: "mc-heads.net" }],
+  },
   turbopack: {
     rules: {
       "*.css": {

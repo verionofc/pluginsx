@@ -24,6 +24,7 @@ import {
 import { ServerItemIcon } from "@/components/account/ServerItemIcon";
 import { useHydrated } from "@/hooks/useHydrated";
 import { authClient } from "@/lib/auth-client";
+import { mobDisplayName } from "@/lib/mob-heads";
 import {
   configChanges,
   documentsEqual,
@@ -38,6 +39,7 @@ import {
   remoteTimestamp,
   validateDocuments,
 } from "@/lib/remote-spawnerx";
+import { MobHead } from "./MobHead";
 import { RemoteConfigEditor } from "./RemoteConfigEditor";
 import { RemoteShopEditor } from "./RemoteShopEditor";
 import { remoteMutation, useRemoteServer } from "./useRemoteServer";
@@ -139,16 +141,6 @@ function objectAt(value: unknown, key: string): Record<string, unknown> {
   return entry && typeof entry === "object" && !Array.isArray(entry)
     ? (entry as Record<string, unknown>)
     : {};
-}
-
-function SpawnerHead({ entity }: { entity: string }) {
-  const initials =
-    entity.replace(/[^A-Z]/g, "").slice(0, 2) || entity.slice(0, 2);
-  return (
-    <span className="remote-spawner-head" aria-hidden="true">
-      <span>{initials}</span>
-    </span>
-  );
 }
 
 function SpawnerCatalog({
@@ -254,7 +246,7 @@ function SpawnerCatalog({
             return (
               <article className="remote-spawner-card" key={entity}>
                 <div className="remote-spawner-card__art">
-                  <SpawnerHead entity={entity} />
+                  <MobHead mobId={entity} size={52} />
                   <span
                     className="remote-spawner-card__status"
                     data-listed={Boolean(item)}
@@ -264,8 +256,11 @@ function SpawnerCatalog({
                 </div>
                 <div className="remote-spawner-card__body">
                   <div>
-                    <strong>{friendlyEntity(entity)}</strong>
-                    <code>{entity}</code>
+                    <strong>{mobDisplayName(entity)}</strong>
+                    <code>
+                      minecraft:
+                      {entity.toLowerCase().replace(/^minecraft:/, "")}
+                    </code>
                   </div>
                   <dl>
                     <div>
@@ -716,7 +711,7 @@ export function RemoteDashboard({
         </Link>
         <span>/</span>
         <span>SpawnerX</span>
-        <span className="remote-version">WEB 0.5.2</span>
+        <span className="remote-version">WEB 0.5.3</span>
       </div>
       <header className="remote-hero">
         <div className="remote-hero__emblem">

@@ -19,3 +19,8 @@
 - Corrigido o estado terminal exibido após uma autorização válida quando a API ou o servidor ainda está respondendo.
 - Adicionado fallback entre a origem direta da API e o rewrite seguro do mesmo domínio.
 - A bancada agora oferece nova tentativa sem perder a sessão nem bloquear permanentemente o painel.
+## 0.5.3 — 2026-10-29
+
+- Catálogo visual de Mob Heads flat integrado ao painel de spawners.
+- Cabeças carregadas por um componente reutilizável, com fallback pixelado, nomes amigáveis e IDs Minecraft preservados.
+- Imagens restritas ao domínio `mc-heads.net`, sem chamadas arbitrárias ou alteração dos documentos YAML.

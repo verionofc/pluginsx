@@ -473,6 +473,28 @@
   font: 900 1.1rem monospace;
   image-rendering: pixelated;
 }
+.mob-head {
+  display: grid;
+  place-items: center;
+  flex: none;
+  overflow: hidden;
+  image-rendering: pixelated;
+}
+.mob-head img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+.mob-head--fallback {
+  border: 2px solid color-mix(in srgb, var(--site-accent) 55%, transparent);
+  background: linear-gradient(135deg, #95c873, #2e5636 60%, #18241c);
+  box-shadow:
+    inset -5px -5px 0 #0004,
+    4px 4px 0 #0004;
+  color: #ecffdc;
+  font: 900 0.8rem monospace;
+}
 .remote-spawner-card__status {
   align-self: flex-start;
   padding: 0.3rem 0.5rem;
