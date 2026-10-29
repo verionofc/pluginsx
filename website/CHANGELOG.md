@@ -1,5 +1,11 @@
 # Website
 
+## 0.5.4 — 2026-10-29
+
+- Corrigidas origens incompatíveis que faziam a MC-Heads retornar uma skin de Steve.
+- Catálogo validado contra identificadores MHF publicados pelo serviço; entidades sem origem confirmada usam fallback explícito em vez de uma textura enganosa.
+- Cabeças flat também aparecem nos slots de spawner do editor visual da loja.
+
 ## 0.5.1 — 2026-10-28
 
 - Remove the floating global footer from the SpawnerX remote console so its editor and action rail are never covered.

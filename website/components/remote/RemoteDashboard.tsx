@@ -711,7 +711,7 @@ export function RemoteDashboard({
         </Link>
         <span>/</span>
         <span>SpawnerX</span>
-        <span className="remote-version">WEB 0.5.3</span>
+        <span className="remote-version">WEB 0.5.4</span>
       </div>
       <header className="remote-hero">
         <div className="remote-hero__emblem">

@@ -9,6 +9,7 @@ import {
   nodeDefault,
   validDynamicKey,
 } from "@/lib/remote-spawnerx";
+import { MobHead } from "./MobHead";
 import { AdvancedYamlEditor, ConfigField } from "./RemoteConfigEditor";
 
 const emptySchema: ConfigSchema = {
@@ -317,7 +318,7 @@ export function RemoteShopEditor({
                     data-hidden={isConfigObject(entry) && entry.price === 0}
                     onClick={() => setItemKey(key)}
                   >
-                    <TbCube aria-hidden="true" size={28} />
+                    <MobHead mobId={key} size={38} />
                     <strong>{key.replaceAll("_", " ")}</strong>
                     <span>
                       {isConfigObject(entry) && typeof entry.price === "number"

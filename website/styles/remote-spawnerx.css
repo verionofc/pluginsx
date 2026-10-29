@@ -1233,6 +1233,12 @@
   color: var(--site-accent-soft);
   filter: drop-shadow(3px 3px #0005);
 }
+.remote-inventory__slot .mob-head {
+  filter: drop-shadow(3px 3px #0005);
+}
+.remote-inventory__slot .mob-head--fallback {
+  font-size: 0.7rem;
+}
 .remote-inventory__slot strong {
   font-size: 0.6rem;
   line-height: 1.8;
