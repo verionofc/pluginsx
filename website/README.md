@@ -75,7 +75,7 @@ O recibo com a arte do plano e a animação de conquista aparece uma única vez
 após a key estar pronta. O inventário atualiza e destaca o card correspondente,
 respeitando movimento reduzido. Veja o [fluxo completo](../docs/COMPRA_LICENCAS_INDEPENDENTES.md).
 
-## Gerenciamento remoto · v0.5.1
+## Gerenciamento remoto · v0.5.2
 
 `/account` abre a bancada do SpawnerX em `/server/[serverId]/spawnerx`. O servidor
 precisa executar uma versão compatível com o protocolo remoto, iniciar

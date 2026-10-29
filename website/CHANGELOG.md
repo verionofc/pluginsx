@@ -13,3 +13,9 @@
 - Rascunhos, aplicação, sincronização, reload, revisões, comparação e restauração integrados ao canal autenticado do plugin.
 - Bloqueio de alterações quando a conexão operacional expira; resultados de operações dependem da confirmação real do SpawnerX.
 - `/account` apresenta a disponibilidade do gerenciamento remoto e os plugins informados pela instalação.
+
+## 0.5.2 — 2026-10-29
+
+- Corrigido o estado terminal exibido após uma autorização válida quando a API ou o servidor ainda está respondendo.
+- Adicionado fallback entre a origem direta da API e o rewrite seguro do mesmo domínio.
+- A bancada agora oferece nova tentativa sem perder a sessão nem bloquear permanentemente o painel.

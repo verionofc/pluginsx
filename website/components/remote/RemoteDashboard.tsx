@@ -469,7 +469,7 @@ export function RemoteDashboard({
   ownerId,
 }: {
   serverId: string;
-  initialState: RemoteServerState;
+  initialState: RemoteServerState | null;
   ownerId: string;
 }) {
   const hydrated = useHydrated();
@@ -668,7 +668,7 @@ export function RemoteDashboard({
         <output aria-live="polite">Preparando a bancada do servidor…</output>
       </main>
     );
-  if (accountChanged || !state)
+  if (accountChanged)
     return (
       <main className="remote-shell remote-unavailable">
         <TbPlugConnectedX size={42} aria-hidden="true" />
@@ -681,6 +681,26 @@ export function RemoteDashboard({
         <Link href="/account" className="remote-button">
           Voltar para minha conta
         </Link>
+      </main>
+    );
+  if (!state)
+    return (
+      <main className="remote-shell remote-unavailable">
+        <TbPlugConnectedX size={42} aria-hidden="true" />
+        <h1 className="font-minecraft-text">Aguardando o servidor</h1>
+        <p>
+          {connectionError ||
+            "A autorização foi registrada, mas a instalação ainda não respondeu ao canal remoto."}
+        </p>
+        <button
+          type="button"
+          className="remote-button remote-button--primary"
+          disabled={checking}
+          onClick={() => void refresh()}
+        >
+          <TbRefresh className={checking ? "animate-spin" : undefined} />
+          {checking ? "Consultando…" : "Tentar novamente"}
+        </button>
       </main>
     );
   const latest = state.operations[0];
@@ -696,7 +716,7 @@ export function RemoteDashboard({
         </Link>
         <span>/</span>
         <span>SpawnerX</span>
-        <span className="remote-version">WEB 0.5.1</span>
+        <span className="remote-version">WEB 0.5.2</span>
       </div>
       <header className="remote-hero">
         <div className="remote-hero__emblem">

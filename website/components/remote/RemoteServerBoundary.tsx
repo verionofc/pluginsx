@@ -13,11 +13,22 @@ export async function RemoteServerBoundary({
 }) {
   if (!/^[a-f0-9-]{36}$/i.test(serverId)) notFound();
   const requestHeaders = await headers();
-  const api = (
-    process.env.NEXT_PUBLIC_API_URL ??
-    (process.env.NODE_ENV === "development" ? "http://localhost:3333" : "")
-  ).replace(/\/$/, "");
-  if (!api)
+  const configuredApi = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(
+    /\/$/,
+    "",
+  );
+  const forwardedHost =
+    requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
+  const forwardedProto = requestHeaders.get("x-forwarded-proto") ?? "https";
+  const requestOrigin = forwardedHost
+    ? `${forwardedProto}://${forwardedHost}`
+    : "";
+  const apiCandidates = [
+    configuredApi,
+    requestOrigin,
+    process.env.NODE_ENV === "development" ? "http://localhost:3333" : "",
+  ].filter((value, index, values) => value && values.indexOf(value) === index);
+  if (!apiCandidates.length)
     return (
       <main className="remote-shell remote-unavailable">
         <h1>Conexão indisponível</h1>
@@ -28,14 +39,30 @@ export async function RemoteServerBoundary({
       </main>
     );
   const cookie = requestHeaders.get("cookie") ?? "";
+  async function apiGet(path: string, timeout: number) {
+    let lastResponse: Response | null = null;
+    for (const api of apiCandidates) {
+      try {
+        const response = await fetch(`${api}${path}`, {
+          headers: { cookie },
+          cache: "no-store",
+          signal: AbortSignal.timeout(timeout),
+        });
+        lastResponse = response;
+        // A same-origin rewrite is a reliable fallback when the public API
+        // hostname is not reachable from the Next server runtime.
+        if (response.ok || [401, 403, 404].includes(response.status))
+          return response;
+      } catch {
+        // Try the next trusted origin. No private data is sent elsewhere.
+      }
+    }
+    return lastResponse;
+  }
   let session: { user?: { id: string } } | null;
   try {
-    const response = await fetch(`${api}/auth/get-session`, {
-      headers: { cookie },
-      cache: "no-store",
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!response.ok) throw new Error("A sessão não pôde ser verificada.");
+    const response = await apiGet("/auth/get-session", 5000);
+    if (!response?.ok) throw new Error("A sessão não pôde ser verificada.");
     session = await response.json();
   } catch {
     return (
@@ -61,30 +88,33 @@ export async function RemoteServerBoundary({
   }
   let state: RemoteServerState;
   try {
-    const response = await fetch(`${api}/remote/spawnerx/servers/${serverId}`, {
-      headers: { cookie },
-      cache: "no-store",
-      signal: AbortSignal.timeout(6000),
-    });
+    const response = await apiGet(`/remote/spawnerx/servers/${serverId}`, 6000);
+    if (!response) throw new Error("A API não respondeu à consulta.");
     if (response.status === 403 || response.status === 404) notFound();
     if (response.status === 401)
       redirect(
         `/account?returnTo=${encodeURIComponent(`/server/${serverId}/spawnerx${connect ? "/connect" : ""}`)}`,
       );
-    if (!response.ok) throw new Error("A API não respondeu à consulta.");
+    if (!response.ok) {
+      const detail = await response.json().catch(() => null);
+      throw new Error(detail?.message ?? "A API não respondeu à consulta.");
+    }
     state = await response.json();
   } catch (failure) {
     // Next's navigation exceptions must propagate to the framework.
     if (failure && typeof failure === "object" && "digest" in failure)
       throw failure;
+    if (connect)
+      return (
+        <RemoteConnect key={serverId} serverId={serverId} initialState={null} />
+      );
     return (
-      <main className="remote-shell remote-unavailable">
-        <h1>Servidor indisponível para consulta</h1>
-        <p>
-          Não foi possível confirmar o estado desta instalação. Nenhuma ação
-          administrativa foi liberada.
-        </p>
-      </main>
+      <RemoteDashboard
+        key={serverId}
+        serverId={serverId}
+        initialState={null}
+        ownerId={session.user.id}
+      />
     );
   }
   return connect ? (

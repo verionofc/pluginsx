@@ -9,7 +9,7 @@ export function useRemoteServer(
 ) {
   const [state, setState] = useState(initialState);
   const [error, setError] = useState("");
-  const [checking, setChecking] = useState(false);
+  const [checking, setChecking] = useState(!initialState);
   const [unauthorized, setUnauthorized] = useState(false);
   const request = useRef<AbortController | null>(null);
   const active = useRef(true);
