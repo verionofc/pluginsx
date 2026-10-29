@@ -280,6 +280,7 @@ async function storeSnapshot(
   row.configHash = snap.configHash;
   row.documents = snap.documents;
   row.capabilities = snap.capabilities;
+  row.serverIcon = snap.serverIcon;
   row.capturedAt = new Date();
   await LicenseServer.updateOne(
     { _id: row._id },
@@ -1061,6 +1062,8 @@ export async function readRemoteState(userId: string, id: string) {
         id: server._id,
         serverId: server.serverId,
         name: server.displayName || server.name,
+        icon: server.icon ?? "grass",
+        iconData: row?.serverIcon?.data ?? null,
         minecraftVersion: server.minecraftVersion,
         implementation: server.implementation,
         implementationVersion: server.implementationVersion,

@@ -37,6 +37,7 @@ export interface RemoteSessionRecord {
   capabilities?: Capabilities;
   capturedAt?: Date;
   uptimeSeconds?: number;
+  serverIcon?: { data: string; hash: string } | undefined;
   draftId?: string | undefined;
 }
 const sessionSchema = new Schema<RemoteSessionRecord>({
@@ -65,6 +66,7 @@ const sessionSchema = new Schema<RemoteSessionRecord>({
   capabilities: Schema.Types.Mixed,
   capturedAt: Date,
   uptimeSeconds: Number,
+  serverIcon: Schema.Types.Mixed,
   draftId: String,
 });
 sessionSchema.index({ state: 1, leaseExpiresAt: 1 });

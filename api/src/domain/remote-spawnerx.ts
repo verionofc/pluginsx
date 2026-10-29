@@ -68,6 +68,7 @@ export type Snapshot = {
   documents: Documents;
   capabilities: Capabilities;
   capturedAt?: string;
+  serverIcon?: { data: string; hash: string };
 };
 export const remoteEnvelope = signedEnvelope.extend({
   payload: z.string().min(2).max(262144),
@@ -387,13 +388,19 @@ export function validateSnapshot(value: unknown): Snapshot {
   if (
     Object.keys(value).some(
       (key) =>
-        !["configHash", "documents", "capabilities", "capturedAt"].includes(
+        !["configHash", "documents", "capabilities", "capturedAt", "serverIcon"].includes(
           key,
         ),
     )
   )
     invalid("snapshot", "propriedade não suportada.");
   hashSchema.parse(value.configHash);
+  if (value.serverIcon !== undefined) {
+    if (!isRecord(value.serverIcon) || typeof value.serverIcon.data !== "string" || typeof value.serverIcon.hash !== "string" || value.serverIcon.data.length > 180000)
+      invalid("snapshot.serverIcon", "ícone inválido ou excessivo.");
+    if (!value.serverIcon.data.startsWith("data:image/png;base64,")) invalid("snapshot.serverIcon", "somente PNG em base64 é aceito.");
+    if (!/^[a-f0-9]{64}$/.test(value.serverIcon.hash)) invalid("snapshot.serverIcon", "hash inválido.");
+  }
   const cap = value.capabilities;
   if (
     Object.keys(cap).some(

@@ -67,6 +67,16 @@ export type RemoteServerState = {
     id: string;
     serverId: string;
     name: string;
+    icon?:
+      | "grass"
+      | "chest"
+      | "diamond"
+      | "redstone"
+      | "crafting"
+      | "sword"
+      | "beacon"
+      | "portal";
+    iconData?: string | null;
     minecraftVersion: string;
     implementation: string;
     implementationVersion: string;

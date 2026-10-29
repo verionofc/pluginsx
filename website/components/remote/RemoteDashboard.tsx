@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -20,6 +21,7 @@ import {
   TbServer,
   TbShoppingBag,
 } from "react-icons/tb";
+import { ServerItemIcon } from "@/components/account/ServerItemIcon";
 import { useHydrated } from "@/hooks/useHydrated";
 import { authClient } from "@/lib/auth-client";
 import {
@@ -42,8 +44,10 @@ import { remoteMutation, useRemoteServer } from "./useRemoteServer";
 
 const sections = [
   { id: "overview", label: "Visão geral", icon: TbServer },
-  { id: "config", label: "Configurações", icon: TbAdjustments },
+  { id: "spawners", label: "Spawners", icon: TbCube },
   { id: "shop", label: "Loja", icon: TbShoppingBag },
+  { id: "config", label: "Configurações", icon: TbAdjustments },
+  { id: "sync", label: "Sincronização", icon: TbCloudUpload },
   { id: "connection", label: "Conexão", icon: TbPlugConnected },
   { id: "history", label: "Histórico", icon: TbHistory },
   { id: "plugin", label: "Informações do plugin", icon: TbInfoCircle },
@@ -119,6 +123,179 @@ function ConfirmationDialog({
 }
 function TbShieldCheckIcon() {
   return <TbClipboardList size={30} aria-hidden="true" />;
+}
+
+function friendlyEntity(value: string) {
+  return value
+    .toLowerCase()
+    .split(/[ _-]+/)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function objectAt(value: unknown, key: string): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const entry = (value as Record<string, unknown>)[key];
+  return entry && typeof entry === "object" && !Array.isArray(entry)
+    ? (entry as Record<string, unknown>)
+    : {};
+}
+
+function SpawnerHead({ entity }: { entity: string }) {
+  const initials =
+    entity.replace(/[^A-Z]/g, "").slice(0, 2) || entity.slice(0, 2);
+  return (
+    <span className="remote-spawner-head" aria-hidden="true">
+      <span>{initials}</span>
+    </span>
+  );
+}
+
+function SpawnerCatalog({
+  state,
+  onOpenShop,
+}: {
+  state: RemoteServerState;
+  onOpenShop: () => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<"all" | "listed" | "configured">("all");
+  const [view, setView] = useState<"grid" | "list">("grid");
+  const config = state.snapshot?.documents.config ?? {};
+  const shop = state.snapshot?.documents.shop ?? {};
+  const configured = objectAt(config, "mob-rarities");
+  const spawner = objectAt(shop, "spawner");
+  const shopRoot = objectAt(spawner, "shop");
+  const categories = objectAt(shopRoot, "categories");
+  const listed = new Map<string, Record<string, unknown>>();
+  for (const category of Object.values(categories)) {
+    const items = objectAt(category, "items");
+    for (const [entity, item] of Object.entries(items)) {
+      if (item && typeof item === "object" && !Array.isArray(item))
+        listed.set(entity, item as Record<string, unknown>);
+    }
+  }
+  const entities = [...new Set([...Object.keys(configured), ...listed.keys()])]
+    .filter((entity) => entity !== "DEFAULT")
+    .filter((entity) => {
+      const normalized = `${entity} ${friendlyEntity(entity)}`.toLowerCase();
+      return normalized.includes(query.toLowerCase().trim());
+    })
+    .filter((entity) =>
+      filter === "all"
+        ? true
+        : filter === "listed"
+          ? listed.has(entity)
+          : configured[entity] !== undefined,
+    )
+    .sort((a, b) => a.localeCompare(b));
+  return (
+    <section className="remote-catalog">
+      <div className="remote-catalog__toolbar">
+        <div>
+          <p className="remote-eyebrow">Inventário da instalação</p>
+          <h3>Spawners configurados</h3>
+          <p className="remote-muted">
+            Dados derivados do snapshot confirmado pelo plugin. Nenhum item é
+            inventado pelo painel.
+          </p>
+        </div>
+        <div className="remote-catalog__controls">
+          <label className="remote-search">
+            <span className="sr-only">Pesquisar entidade</span>
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Pesquisar mob…"
+            />
+          </label>
+          <select
+            value={filter}
+            onChange={(event) => setFilter(event.target.value as typeof filter)}
+            aria-label="Filtrar spawners"
+          >
+            <option value="all">Todos</option>
+            <option value="configured">Com raridade</option>
+            <option value="listed">Na loja</option>
+          </select>
+          <fieldset className="remote-view-toggle" aria-label="Visualização">
+            <button
+              type="button"
+              aria-pressed={view === "grid"}
+              onClick={() => setView("grid")}
+            >
+              Grade
+            </button>
+            <button
+              type="button"
+              aria-pressed={view === "list"}
+              onClick={() => setView("list")}
+            >
+              Lista
+            </button>
+          </fieldset>
+        </div>
+      </div>
+      {!entities.length ? (
+        <div className="remote-empty-state">
+          <TbCube size={30} />
+          <strong>Nenhum spawner encontrado</strong>
+          <span>Sincronize o servidor ou ajuste os filtros.</span>
+        </div>
+      ) : (
+        <div className={`remote-spawner-grid remote-spawner-grid--${view}`}>
+          {entities.map((entity) => {
+            const item = listed.get(entity);
+            const price = typeof item?.price === "number" ? item.price : null;
+            const rarity =
+              typeof configured[entity] === "string"
+                ? configured[entity]
+                : null;
+            return (
+              <article className="remote-spawner-card" key={entity}>
+                <div className="remote-spawner-card__art">
+                  <SpawnerHead entity={entity} />
+                  <span
+                    className="remote-spawner-card__status"
+                    data-listed={Boolean(item)}
+                  >
+                    {item ? "Na loja" : "Configurado"}
+                  </span>
+                </div>
+                <div className="remote-spawner-card__body">
+                  <div>
+                    <strong>{friendlyEntity(entity)}</strong>
+                    <code>{entity}</code>
+                  </div>
+                  <dl>
+                    <div>
+                      <dt>Raridade</dt>
+                      <dd>{rarity ?? "Não definida"}</dd>
+                    </div>
+                    <div>
+                      <dt>Compra</dt>
+                      <dd>
+                        {price == null
+                          ? "Não publicada"
+                          : `${price.toLocaleString("pt-BR")} XP`}
+                      </dd>
+                    </div>
+                  </dl>
+                </div>
+                <button
+                  type="button"
+                  className="remote-button remote-button--quiet"
+                  onClick={onOpenShop}
+                >
+                  Abrir configuração <TbArrowRight />
+                </button>
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
 }
 
 export function ConnectionSteps({ state }: { state: string | undefined }) {
@@ -523,7 +700,19 @@ export function RemoteDashboard({
       </div>
       <header className="remote-hero">
         <div className="remote-hero__emblem">
-          <TbCube size={44} aria-hidden="true" />
+          {state.server.iconData?.startsWith("data:image/png;base64,") ? (
+            // The API validates this as a normalized 64×64 PNG before it is
+            // persisted; no arbitrary remote URL is accepted by the browser.
+            <Image
+              src={state.server.iconData}
+              alt=""
+              width={64}
+              height={64}
+              unoptimized
+            />
+          ) : (
+            <ServerItemIcon icon={state.server.icon ?? "grass"} />
+          )}
         </div>
         <div className="remote-hero__copy">
           <p className="remote-eyebrow">Bancada de controle · SpawnerX</p>
@@ -533,6 +722,10 @@ export function RemoteDashboard({
             {state.server.pluginVersion} <span>·</span> ID{" "}
             {state.server.serverId.slice(0, 8)}
           </p>
+          <span className="remote-hero__address">
+            Instalação {state.server.serverId.slice(0, 16)}… · PaperMC
+            autorizado
+          </span>
         </div>
         <div className="remote-hero__status" data-online={manageable}>
           <i aria-hidden="true" />
@@ -642,6 +835,45 @@ export function RemoteDashboard({
                   </small>
                 </article>
                 <article>
+                  <span>Spawner catalogados</span>
+                  <strong>
+                    {state.snapshot
+                      ? Object.keys(
+                          objectAt(
+                            state.snapshot.documents.config,
+                            "mob-rarities",
+                          ),
+                        ).filter((key) => key !== "DEFAULT").length
+                      : "—"}
+                  </strong>
+                  <small>Entidades presentes no snapshot confirmado</small>
+                </article>
+                <article>
+                  <span>Itens na loja</span>
+                  <strong>
+                    {state.snapshot
+                      ? Object.values(
+                          objectAt(
+                            objectAt(
+                              objectAt(
+                                state.snapshot.documents.shop,
+                                "spawner",
+                              ),
+                              "shop",
+                            ),
+                            "categories",
+                          ),
+                        ).reduce<number>(
+                          (total, category) =>
+                            total +
+                            Object.keys(objectAt(category, "items")).length,
+                          0,
+                        )
+                      : "—"}
+                  </strong>
+                  <small>Entradas XP publicadas nas categorias</small>
+                </article>
+                <article>
                   <span>Canal administrativo</span>
                   <strong>{manageable ? "Operacional" : "Bloqueado"}</strong>
                   <small>
@@ -719,6 +951,76 @@ export function RemoteDashboard({
                     <TbRefresh aria-hidden="true" /> Sincronizar agora
                   </button>
                 </header>
+                <OperationFeed operations={state.operations} />
+              </section>
+            </>
+          )}
+          {section === "spawners" && (
+            <SpawnerCatalog
+              state={state}
+              onOpenShop={() => setSection("shop")}
+            />
+          )}
+          {section === "sync" && (
+            <>
+              <section className="remote-panel remote-sync-hero">
+                <div>
+                  <p className="remote-eyebrow">Canal autenticado</p>
+                  <h3 className="font-minecraft-text">
+                    Sincronização sob confirmação
+                  </h3>
+                  <p>
+                    O painel só considera uma alteração aplicada depois que o
+                    SpawnerX devolve o recibo assinado. Enquanto o servidor
+                    estiver offline, você pode consultar o último estado
+                    confirmado, mas não enviar operações.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="remote-button remote-button--primary"
+                  disabled={blocked}
+                  onClick={() => void operation("SYNC")}
+                >
+                  <TbRefresh /> Sincronizar agora
+                </button>
+              </section>
+              <section className="remote-panel">
+                <header className="remote-section-heading">
+                  <div>
+                    <h3>Última fotografia do servidor</h3>
+                    <p>
+                      Hash e horário ajudam a detectar alterações locais e
+                      evitar sobrescrever configurações feitas diretamente no
+                      servidor.
+                    </p>
+                  </div>
+                </header>
+                <dl className="remote-definition-list">
+                  <div>
+                    <dt>Hash confirmado</dt>
+                    <dd>
+                      <code>
+                        {state.snapshot?.hash ?? "Aguardando snapshot"}
+                      </code>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Capturado em</dt>
+                    <dd>{remoteTimestamp(state.snapshot?.capturedAt)}</dd>
+                  </div>
+                  <div>
+                    <dt>Estado do canal</dt>
+                    <dd>
+                      {state.online
+                        ? "Online"
+                        : "Offline ou sem heartbeat recente"}
+                    </dd>
+                  </div>
+                </dl>
+              </section>
+              <section className="remote-panel">
+                <h3>Operações recentes</h3>
                 <OperationFeed operations={state.operations} />
               </section>
             </>
